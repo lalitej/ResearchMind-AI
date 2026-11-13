@@ -1,0 +1,56 @@
+# ResearchMind AI — upgraded workspace
+
+This version keeps the existing PDF/URL import, paper summary, paper-grounded chat, and Gemini → Ollama/Qwen fallback, while adding a redesigned workspace and research/study pages.
+
+## Included sections
+
+- **Research Workspace** — import PDFs or research URLs, view extracted paper details and summaries, and chat with page-grounded context.
+- **Advanced Analysis** — methodology, contributions, results, strengths, limitations, research gaps and future directions.
+- **Compare Papers** — compare 2–5 uploaded PDFs.
+- **Literature Review** — synthesize papers already imported into the local library.
+- **Study Tools** — flashcards, MCQ practice, notes and presentation outlines.
+- **History** — SQLite-backed paper library and activity timeline for imports, summaries, questions, answers, analyses and study activities.
+
+The interface includes a refreshed academic visual style and a light/dark appearance toggle in the sidebar.
+
+## Setup (Windows PowerShell)
+
+Activate your existing virtual environment, then install the updated dependencies:
+
+```powershell
+.\.venv\Scripts\Activate.ps1
+python -m pip install -r requirements.txt
+```
+
+Keep your existing `.env` / Streamlit secrets outside the ZIP. The app continues to use your configured Gemini and Ollama settings. For local Qwen, make sure Ollama is running and the configured model is installed.
+
+Run the application:
+
+```powershell
+python -m streamlit run app.py
+```
+
+Streamlit automatically discovers the feature pages in `pages/`. Imported papers, summaries, notes, study items and activity history are stored locally in `data/researchmind_history.db`; this database is created automatically and is not included in the source ZIP.
+
+## Important notes
+
+- Install the new `beautifulsoup4`, `python-docx` and `reportlab` dependencies via `requirements.txt`.
+- AI-generated analysis, comparison and study material should be checked against the original paper before academic submission.
+- The literature-review and comparison tools use extracted text supplied to the model. They do not fabricate missing source details intentionally; verify every citation and claim.
+- The uploaded original ZIP was left untouched. This upgraded ZIP omits redundant backup copies from the runtime package; the original uploaded archive remains the recovery copy.
+## Deploy on Streamlit Community Cloud
+
+1. Push this project to GitHub without .env, databases, virtual environments, or backup files.
+2. Create a Streamlit Community Cloud app using your GitHub repository and pp.py.
+3. Open App Settings > Secrets and add:
+
+GEMINI_API_KEY = "your-gemini-api-key"
+RESEARCHMIND_CLOUD = "true"
+
+Replace the placeholder with your actual key inside Streamlit Cloud Secrets only. Never commit your real key to GitHub.
+
+4. Save the Secrets and deploy or reboot the app.
+
+Cloud mode uses Gemini and disables local Ollama/Qwen because your personal computer's Ollama service is not automatically accessible from Streamlit Cloud.
+
+Note: SQLite history on Streamlit Cloud may be lost after restarts or redeployments.

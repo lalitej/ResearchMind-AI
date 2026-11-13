@@ -1,0 +1,10 @@
+streamlit>=1.45
+python-dotenv
+requests
+google-genai
+PyMuPDF
+pandas
+numpy
+beautifulsoup4
+python-docx
+reportlab
