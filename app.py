@@ -404,11 +404,10 @@ with st.sidebar:
     # Local Ollama is not automatically available on Streamlit Cloud.
     cloud_mode = is_cloud_deployment()
 
-    available_models = (
-        [PROVIDER_GEMINI]
-        if cloud_mode
-        else [PROVIDER_GEMINI, PROVIDER_QWEN]
-    )
+    available_models = [
+    PROVIDER_GEMINI,
+    PROVIDER_QWEN
+]
 
     if (
         cloud_mode
