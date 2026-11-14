@@ -9,30 +9,57 @@ load_dotenv()
 # OLLAMA CONFIGURATION
 # =========================================
 
-OLLAMA_BASE_URL = os.getenv(
+def _get_setting(name, default=None):
+    value = os.getenv(name)
+
+    if value:
+        return value
+
+    try:
+        import streamlit as st
+        return st.secrets.get(name, default)
+    except Exception:
+        return default
+
+
+OLLAMA_API_KEY = _get_setting("OLLAMA_API_KEY", "")
+
+OLLAMA_BASE_URL = _get_setting(
     "OLLAMA_BASE_URL",
     "http://localhost:11434"
 ).rstrip("/")
 
-OLLAMA_MODEL = os.getenv(
+OLLAMA_MODEL = _get_setting(
     "OLLAMA_MODEL",
     "qwen2.5:7b"
 )
 
+OLLAMA_NUM_CTX = int(
+    _get_setting("OLLAMA_NUM_CTX", 8192)
+)
 
-def _read_int_env(name, default):
-    try:
-        return int(os.getenv(name, default))
-    except (TypeError, ValueError):
-        return default
+OLLAMA_READ_TIMEOUT = int(
+    _get_setting("OLLAMA_READ_TIMEOUT", 600)
+)
 
+# Support both local and cloud endpoints.
+if "ollama.com" in OLLAMA_BASE_URL:
+    if not OLLAMA_BASE_URL.endswith("/api"):
+        OLLAMA_BASE_URL += "/api"
 
-# Context window (in tokens) requested from Ollama.
-# Ollama's default is small and silently cuts off long prompts.
-OLLAMA_NUM_CTX = _read_int_env("OLLAMA_NUM_CTX", 8192)
+    if not OLLAMA_API_KEY:
+        raise RuntimeError(
+            "OLLAMA_API_KEY is missing from deployment secrets."
+        )
 
-# Maximum seconds to wait for a local response.
-OLLAMA_READ_TIMEOUT = _read_int_env("OLLAMA_READ_TIMEOUT", 600)
+HEADERS = {
+    "Content-Type": "application/json"
+}
+
+if OLLAMA_API_KEY:
+    HEADERS["Authorization"] = (
+        f"Bearer {OLLAMA_API_KEY}"
+    )
 
 
 # =========================================
@@ -40,20 +67,18 @@ OLLAMA_READ_TIMEOUT = _read_int_env("OLLAMA_READ_TIMEOUT", 600)
 # =========================================
 
 class OllamaError(RuntimeError):
-    """Base class for all local Ollama problems."""
+    pass
 
 
 class OllamaConnectionError(OllamaError):
-    """Ollama is not running or cannot be reached."""
+    pass
 
 
 class OllamaModelError(OllamaError):
-    """The requested model is not installed in Ollama."""
+    pass
 
 
 def _error_detail(response):
-    """Extract Ollama's own error message from an HTTP response."""
-
     try:
         body = response.json()
 
@@ -63,22 +88,20 @@ def _error_detail(response):
     except ValueError:
         pass
 
-    text = (response.text or "").strip()
-
-    return text[:300] if text else "no details provided"
+    return (response.text or "")[:300]
 
 
 # =========================================
-# CHECK OLLAMA CONNECTION
+# CHECK CONNECTION
 # =========================================
 
 def check_ollama_connection():
-    """Check whether the Ollama server is running."""
 
     try:
         response = requests.get(
-            f"{OLLAMA_BASE_URL}/api/tags",
-            timeout=10
+            f"{OLLAMA_BASE_URL}/tags",
+            headers=HEADERS,
+            timeout=15
         )
 
         response.raise_for_status()
@@ -89,16 +112,16 @@ def check_ollama_connection():
 
 
 # =========================================
-# GET AVAILABLE MODELS
+# AVAILABLE CLOUD / LOCAL MODELS
 # =========================================
 
 def get_available_models():
-    """Return locally installed Ollama models."""
 
     try:
         response = requests.get(
-            f"{OLLAMA_BASE_URL}/api/tags",
-            timeout=10
+            f"{OLLAMA_BASE_URL}/tags",
+            headers=HEADERS,
+            timeout=20
         )
 
         response.raise_for_status()
@@ -106,8 +129,9 @@ def get_available_models():
         models = response.json().get("models", [])
 
         return [
-            model["name"]
+            model.get("name")
             for model in models
+            if model.get("name")
         ]
 
     except requests.RequestException as error:
@@ -127,7 +151,6 @@ def chat_with_ollama(
     num_ctx=None,
     num_predict=None
 ):
-    """Generate a response using a local Ollama model."""
 
     selected_model = model or OLLAMA_MODEL
     context_size = num_ctx or OLLAMA_NUM_CTX
@@ -140,12 +163,14 @@ def chat_with_ollama(
             "num_predict must be greater than zero."
         )
 
-    # Rough safety check: about 3 characters per token.
-    if len(prompt) > context_size * 3:
-        print(
-            f"Ollama warning: the prompt has {len(prompt):,} "
-            f"characters and may exceed the {context_size}-token "
-            f"context window, so part of it could be cut off."
+    # Validate hosted model availability.
+    available = get_available_models()
+
+    if selected_model not in available:
+        raise OllamaModelError(
+            f"Model '{selected_model}' is not available "
+            f"through this Ollama endpoint. "
+            f"Available models: {', '.join(available[:20])}"
         )
 
     options = {
@@ -153,13 +178,13 @@ def chat_with_ollama(
         "num_ctx": context_size
     }
 
-    # Only set an output limit when explicitly requested.
     if num_predict is not None:
         options["num_predict"] = num_predict
 
     try:
         response = requests.post(
-            f"{OLLAMA_BASE_URL}/api/chat",
+            f"{OLLAMA_BASE_URL}/chat",
+            headers=HEADERS,
             json={
                 "model": selected_model,
                 "messages": [
@@ -171,38 +196,26 @@ def chat_with_ollama(
                 "stream": False,
                 "options": options
             },
-            timeout=(10, OLLAMA_READ_TIMEOUT)
+            timeout=(15, OLLAMA_READ_TIMEOUT)
         )
 
-    except requests.ConnectionError as error:
-        raise OllamaConnectionError(
-            f"Could not connect to Ollama at {OLLAMA_BASE_URL}. "
-            f"Make sure the Ollama application is running."
-        ) from error
+        response.raise_for_status()
 
     except requests.Timeout as error:
         raise OllamaError(
-            f"Ollama did not respond within "
-            f"{OLLAMA_READ_TIMEOUT} seconds."
+            "Ollama request timed out."
         ) from error
 
     except requests.RequestException as error:
-        raise OllamaError(
-            f"Ollama request failed: {error}"
+        detail = (
+            _error_detail(error.response)
+            if error.response is not None
+            else str(error)
+        )
+
+        raise OllamaConnectionError(
+            f"Ollama request failed: {detail}"
         ) from error
-
-    if response.status_code == 404:
-        raise OllamaModelError(
-            f"Model '{selected_model}' is not installed in Ollama. "
-            f"Run: ollama pull {selected_model} "
-            f"({_error_detail(response)})"
-        )
-
-    if response.status_code != 200:
-        raise OllamaError(
-            f"Ollama returned HTTP {response.status_code}: "
-            f"{_error_detail(response)}"
-        )
 
     try:
         result = response.json()
@@ -212,7 +225,6 @@ def chat_with_ollama(
             "Ollama returned an invalid response."
         ) from error
 
-    # Extract generated answer.
     answer = result.get(
         "message", {}
     ).get("content", "")
@@ -221,35 +233,5 @@ def chat_with_ollama(
         raise OllamaError(
             "Ollama returned an empty response."
         )
-
-    # Detect responses stopped by the output token limit.
-    done_reason = result.get("done_reason")
-
-    if num_predict is not None and done_reason == "length":
-        raise OllamaError(
-            f"Ollama reached the configured output limit "
-            f"of {num_predict} tokens. The response may be incomplete. "
-            "Increase num_predict or shorten the prompt."
-        )
-
-    # Log Ollama performance statistics without changing generation.
-    timing_fields = (
-        "prompt_eval_count",
-        "prompt_eval_duration",
-        "eval_count",
-        "eval_duration",
-        "total_duration",
-        "load_duration",
-    )
-
-    print("\n========== OLLAMA GENERATION TIMING ==========")
-    for field in timing_fields:
-        value = result.get(field)
-        if value is not None:
-            if field.endswith('_duration'):
-                print(f"{field}: {value / 1_000_000_000:.2f} seconds")
-            else:
-                print(f"{field}: {value}")
-    print("==============================================\n")
 
     return answer.strip()
