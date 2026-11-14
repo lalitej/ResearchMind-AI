@@ -12,6 +12,7 @@ from ai_engines.ollama_client import (
     chat_with_ollama,
     OllamaError,
     OLLAMA_NUM_CTX,
+    OLLAMA_MODEL,
 )
 
 load_dotenv(override=True)
@@ -21,7 +22,7 @@ load_dotenv(override=True)
 # =====================================================
 
 GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-3.8-flash")
-QWEN_MODEL = os.getenv("OLLAMA_MODEL", "qwen2.5:7b")
+QWEN_MODEL = OLLAMA_MODEL
 
 PROVIDER_GEMINI = "Google Gemini"
 PROVIDER_QWEN = "Ollama - Qwen 2.5"

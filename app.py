@@ -12,6 +12,7 @@ from document_processing.url_reader import extract_research_url
 from ai_engines.gemini_client import (
     summarize_with_fallback,
     generate_answer_with_fallback,
+    QWEN_MODEL,
 )
 
 from research_tools.history_store import (
@@ -38,10 +39,6 @@ GEMINI_MODEL = os.getenv(
     "gemini-3.8-flash",
 )
 
-QWEN_MODEL = os.getenv(
-    "OLLAMA_MODEL",
-    "qwen2.5:7b",
-)
 
 PROVIDER_GEMINI = "Google Gemini"
 PROVIDER_QWEN = "Ollama - Qwen 2.5"
