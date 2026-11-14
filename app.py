@@ -46,6 +46,11 @@ QWEN_MODEL = os.getenv(
 PROVIDER_GEMINI = "Google Gemini"
 PROVIDER_QWEN = "Ollama - Qwen 2.5"
 
+AVAILABLE_MODELS = [
+    PROVIDER_GEMINI,
+    PROVIDER_QWEN,
+]
+
 
 # =========================================================
 # PAGE CONFIGURATION
@@ -63,121 +68,188 @@ apply_theme()
 
 
 # =========================================================
-# EXTRA DESIGN POLISH
+# PAGE-SPECIFIC DESIGN
 # =========================================================
 
 st.markdown(
     """
     <style>
-    .block-container {
-        padding-top: 1.8rem;
-        padding-bottom: 2rem;
-        max-width: 1500px;
+
+    /* Main workspace */
+
+    .main .block-container {
+        max-width: 1600px;
+        padding-top: 2rem;
+        padding-bottom: 3rem;
+    }
+
+    /* Header */
+
+    .rm-hero {
+        display: flex;
+        flex-direction: column;
+        gap: 0.45rem;
+        margin-bottom: 1.4rem;
+    }
+
+    .rm-hero-description {
+        font-size: 0.98rem;
+        line-height: 1.65;
+        opacity: 0.78;
+        max-width: 760px;
     }
 
     .rm-section-label {
-        font-size: 0.72rem;
-        font-weight: 700;
-        letter-spacing: 0.13em;
+        font-size: 0.70rem;
+        font-weight: 800;
+        letter-spacing: 0.15em;
         text-transform: uppercase;
-        color: var(--text-color);
-        opacity: 0.62;
-        margin-bottom: 0.35rem;
+        color: var(--rm-accent);
+        margin-bottom: 0.45rem;
     }
 
-    .rm-section-title {
-        font-size: 1.25rem;
-        font-weight: 700;
-        letter-spacing: -0.025em;
+    .rm-card-heading {
+        font-size: 1.22rem;
+        font-weight: 750;
+        letter-spacing: -0.035em;
         margin-bottom: 0.25rem;
     }
 
-    .rm-section-description {
+    .rm-card-description {
         font-size: 0.88rem;
-        opacity: 0.7;
+        line-height: 1.55;
+        opacity: 0.72;
         margin-bottom: 1rem;
     }
 
-    .rm-status {
+    .rm-status-pill {
         display: inline-flex;
         align-items: center;
         gap: 0.45rem;
-        border: 1px solid rgba(85, 185, 168, 0.30);
-        background: rgba(85, 185, 168, 0.09);
-        color: #55B9A8;
-        padding: 0.4rem 0.75rem;
+        padding: 0.48rem 0.82rem;
+        border: 1px solid var(--rm-border);
         border-radius: 999px;
+        background: var(--rm-accent-soft);
+        color: var(--rm-accent);
         font-size: 0.76rem;
-        font-weight: 650;
-        white-space: nowrap;
+        font-weight: 750;
     }
 
     .rm-status-dot {
         width: 7px;
         height: 7px;
         border-radius: 50%;
-        background: #55B9A8;
+        background: var(--rm-accent);
         display: inline-block;
     }
 
     .rm-document-title {
         font-size: 1.05rem;
-        font-weight: 700;
-        line-height: 1.5;
-        margin-top: 0.3rem;
+        font-weight: 750;
+        line-height: 1.45;
+        margin-bottom: 0.25rem;
+        overflow-wrap: anywhere;
+    }
+
+    .rm-muted-text {
+        font-size: 0.84rem;
+        opacity: 0.72;
+        line-height: 1.55;
+    }
+
+    .rm-summary-heading {
+        font-size: 1.05rem;
+        font-weight: 750;
+        margin-top: 0.4rem;
         margin-bottom: 0.8rem;
     }
 
     .rm-empty-state {
-        border: 1px dashed rgba(140, 160, 180, 0.35);
-        border-radius: 14px;
-        padding: 1.5rem;
         text-align: center;
-        margin-top: 0.8rem;
-        margin-bottom: 0.8rem;
+        padding: 2.2rem 1rem;
+        border: 1px dashed var(--rm-border);
+        border-radius: 15px;
+        background: var(--rm-panel);
     }
 
     .rm-empty-icon {
         font-size: 2rem;
-        margin-bottom: 0.5rem;
+        margin-bottom: 0.7rem;
     }
 
     .rm-empty-title {
         font-size: 1rem;
-        font-weight: 700;
-        margin-bottom: 0.35rem;
+        font-weight: 750;
+        margin-bottom: 0.4rem;
     }
 
     .rm-empty-description {
         font-size: 0.84rem;
-        opacity: 0.68;
         line-height: 1.6;
+        opacity: 0.7;
+        max-width: 430px;
+        margin: 0 auto;
+    }
+
+    .rm-provider-label {
+        font-size: 0.78rem;
+        font-weight: 700;
+        color: var(--rm-accent);
+        background: var(--rm-accent-soft);
+        border: 1px solid var(--rm-border);
+        border-radius: 999px;
+        padding: 0.42rem 0.75rem;
+        display: inline-block;
+        margin: 0.35rem 0 0.8rem;
     }
 
     .rm-footer {
         text-align: center;
-        font-size: 0.78rem;
-        opacity: 0.55;
-        padding-top: 0.5rem;
-        padding-bottom: 0.5rem;
+        font-size: 0.76rem;
+        opacity: 0.58;
+        padding-top: 0.6rem;
     }
 
-    div[data-testid="stMetric"] {
-        border-radius: 12px;
-        padding: 0.75rem;
-        border: 1px solid rgba(140, 160, 180, 0.16);
+    /* Workspace cards */
+
+    [data-testid="stVerticalBlockBorderWrapper"] {
+        border-radius: 16px !important;
     }
 
-    div[data-testid="stChatMessage"] {
+    /* Metrics */
+
+    [data-testid="stMetric"] {
+        padding: 0.9rem 1rem;
         border-radius: 12px;
     }
+
+    /* Chat messages */
+
+    [data-testid="stChatMessage"] {
+        border-radius: 13px;
+        padding: 0.85rem 1rem;
+        margin-bottom: 0.7rem;
+    }
+
+    /* Upload area */
+
+    [data-testid="stFileUploader"] {
+        border-radius: 12px;
+    }
+
+    /* Responsive layout */
 
     @media (max-width: 900px) {
-        .block-container {
+        .main .block-container {
             padding-left: 1rem;
             padding-right: 1rem;
         }
+
+        .rm-card-heading {
+            font-size: 1.08rem;
+        }
     }
+
     </style>
     """,
     unsafe_allow_html=True,
@@ -271,6 +343,43 @@ def reset_summary_state():
 
 
 # =========================================================
+# PROVIDER DISPLAY
+# =========================================================
+
+def display_provider_info(result, feature="AI response"):
+
+    provider = result.get(
+        "provider",
+        "Unknown provider",
+    )
+
+    model = result.get(
+        "model",
+        "Unknown model",
+    )
+
+    fallback_used = result.get(
+        "fallback_used",
+        False,
+    )
+
+    fallback_reason = result.get(
+        "fallback_reason",
+    )
+
+    st.caption(
+        f"Provider: {provider} | Model: {model}"
+    )
+
+    if fallback_used:
+        st.warning(
+            f"{feature} was generated using {provider} "
+            f"because Gemini was unavailable. "
+            f"Reason: {fallback_reason or 'Temporary provider issue'}."
+        )
+
+
+# =========================================================
 # PAPER TEXT RETRIEVAL
 # =========================================================
 
@@ -311,7 +420,6 @@ def get_relevant_paper_context(
             continue
 
         page_number = page.get("page_number", 1)
-
         page_lower = page_text.lower()
 
         score = sum(
@@ -337,7 +445,6 @@ def get_relevant_paper_context(
     selected_pages = scored_pages[:max_pages]
 
     if not any(item[0] > 0 for item in selected_pages):
-
         selected_pages = sorted(
             scored_pages,
             key=lambda item: item[1],
@@ -380,7 +487,7 @@ def answer_paper_question(
 ):
     """
     Answer questions using retrieved research-paper content.
-    Automatically uses the configured provider fallback.
+    Automatically falls back from Gemini to Qwen.
     """
 
     metadata = paper_data.get("metadata", {})
@@ -468,7 +575,19 @@ Provide a helpful, evidence-grounded answer.
 
 with st.sidebar:
 
-    st.markdown("## 🧠 ResearchMind AI")
+    st.markdown(
+        """
+        <div style="
+            padding: 0.45rem 0 0.2rem;
+            font-size: 1.25rem;
+            font-weight: 800;
+            letter-spacing: -0.04em;
+        ">
+            🧠 ResearchMind AI
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
 
     st.caption(f"Version {APP_VERSION}")
 
@@ -476,14 +595,9 @@ with st.sidebar:
 
     st.markdown("### AI Configuration")
 
-    available_models = [
-        PROVIDER_GEMINI,
-        PROVIDER_QWEN,
-    ]
-
     selected_model = st.selectbox(
         "Select AI model",
-        available_models,
+        AVAILABLE_MODELS,
         key="selected_model",
     )
 
@@ -491,82 +605,76 @@ with st.sidebar:
         st.session_state.summary_selected_provider
         != selected_model
     ):
-
         st.session_state.summary_selected_provider = selected_model
-
         reset_summary_state()
 
     st.caption(f"Gemini model: {GEMINI_MODEL}")
-
     st.caption(f"Ollama model: {QWEN_MODEL}")
 
     st.divider()
 
-    st.markdown("### Workspace controls")
-
     if st.button(
-        "🗑️ Clear chat",
+        "Clear chat",
         use_container_width=True,
     ):
-
         st.session_state.messages = []
         st.session_state.chat_provider = None
         st.session_state.chat_model = None
-
         st.rerun()
 
     if st.button(
-        "🔄 Reset research paper",
+        "Reset research paper",
         use_container_width=True,
     ):
-
         reset_paper_state()
-
         st.rerun()
 
     st.divider()
 
-    st.markdown("### About")
+    st.markdown("### About ResearchMind")
 
     st.caption(
-        "An intelligent research companion "
-        "for understanding academic papers."
+        "An intelligent research companion for understanding "
+        "academic papers and exploring scientific findings."
     )
 
     st.caption(
-        "Supports PDF documents, research URLs "
-        "and web articles."
+        "Supports PDF documents, research URLs, "
+        "AI-powered summaries and paper-grounded conversations."
     )
 
-    st.divider()
-
-    st.caption("Powered by Gemini + Ollama")
-
 
 # =========================================================
-# MAIN HEADER
+# MAIN PAGE HEADER
 # =========================================================
 
-page_header(
-    eyebrow="AI-POWERED RESEARCH WORKSPACE",
-    title=APP_NAME,
-    subtitle=(
-        "Understand academic papers, generate structured "
-        "summaries and explore research with AI."
-    ),
+header_left, header_right = st.columns(
+    [5, 1],
+    vertical_alignment="center",
 )
 
-st.markdown(
-    """
-    <div style="margin-top: 0.5rem; margin-bottom: 1.2rem;">
-        <span class="rm-status">
-            <span class="rm-status-dot"></span>
-            Research workspace ready
-        </span>
-    </div>
-    """,
-    unsafe_allow_html=True,
-)
+with header_left:
+    page_header(
+        "AI-POWERED RESEARCH WORKSPACE",
+        APP_NAME,
+        "Understand academic papers, generate structured summaries "
+        "and explore research with AI.",
+    )
+
+with header_right:
+    st.markdown(
+        """
+        <div style="text-align:right; padding-top:0.7rem;">
+            <span class="rm-status-pill">
+                <span class="rm-status-dot"></span>
+                Workspace ready
+            </span>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+
+st.divider()
 
 
 # =========================================================
@@ -585,188 +693,105 @@ left_panel, right_panel = st.columns(
 
 with left_panel:
 
-    st.markdown(
-        """
-        <div class="rm-section-label">DOCUMENT WORKSPACE</div>
-        <div class="rm-section-title">📄 Research Paper</div>
-        <div class="rm-section-description">
-            Import a research paper to extract, analyze and summarize its content.
-        </div>
-        """,
-        unsafe_allow_html=True,
-    )
+    with st.container(border=True):
 
-    input_method = st.radio(
-        "Choose research paper source",
-        [
-            "Upload PDF",
-            "Paper URL",
-        ],
-        horizontal=True,
-        key="paper_input_method",
-    )
-
-    previous_method = st.session_state.previous_input_method
-
-    if previous_method != input_method:
-
-        reset_paper_state()
-
-        st.session_state.previous_input_method = input_method
-
-    paper_data = st.session_state.paper_data
-
-    # -----------------------------------------------------
-    # OPTION 1: UPLOAD PDF
-    # -----------------------------------------------------
-
-    if input_method == "Upload PDF":
-
-        uploaded_file = st.file_uploader(
-            "Import research paper",
-            type=["pdf"],
-            key="research_pdf",
-            help="Upload a PDF containing selectable research text.",
+        st.markdown(
+            '<div class="rm-section-label">DOCUMENT WORKSPACE</div>',
+            unsafe_allow_html=True,
         )
 
-        if uploaded_file is not None:
+        st.markdown(
+            '<div class="rm-card-heading">📄 Research Paper</div>',
+            unsafe_allow_html=True,
+        )
 
-            pdf_bytes = uploaded_file.getvalue()
+        st.markdown(
+            """
+            <div class="rm-card-description">
+                Import a research paper to extract, analyze
+                and summarize its content.
+            </div>
+            """,
+            unsafe_allow_html=True,
+        )
 
-            file_hash = hashlib.sha256(
-                pdf_bytes
-            ).hexdigest()
+        input_method = st.radio(
+            "Choose research paper source",
+            [
+                "Upload PDF",
+                "Paper URL",
+            ],
+            horizontal=True,
+            key="paper_input_method",
+        )
 
-            if file_hash != st.session_state.paper_hash:
+        previous_method = st.session_state.previous_input_method
 
-                reset_paper_state()
+        if previous_method != input_method:
 
-                st.session_state.paper_hash = file_hash
+            reset_paper_state()
 
-                try:
+            st.session_state.previous_input_method = input_method
 
-                    with st.spinner(
-                        "Extracting PDF content..."
-                    ):
+        paper_data = st.session_state.paper_data
 
-                        extracted_data = cached_extract_pdf(
-                            pdf_bytes
-                        )
+        # -------------------------------------------------
+        # OPTION 1: PDF UPLOAD
+        # -------------------------------------------------
 
-                    if not isinstance(extracted_data, dict):
-                        raise ValueError(
-                            "PDF reader returned invalid data."
-                        )
+        if input_method == "Upload PDF":
 
-                    if not extracted_data.get("success"):
-                        raise ValueError(
-                            "No readable text was extracted from this PDF."
-                        )
-
-                    extracted_data.setdefault(
-                        "source_type",
-                        "Uploaded PDF",
-                    )
-
-                    st.session_state.paper_data = extracted_data
-
-                    st.session_state.paper_record_id = save_paper(
-                        extracted_data,
-                        file_hash,
-                    )
-
-                    log_event(
-                        "paper_import",
-                        "Research paper imported",
-                        extracted_data.get(
-                            "source_type",
-                            "Uploaded PDF",
-                        ),
-                        paper_id=st.session_state.paper_record_id,
-                    )
-
-                    paper_data = extracted_data
-
-                except Exception as error:
-
-                    st.session_state.paper_hash = None
-                    st.session_state.summary_error = str(error)
-
-                    paper_data = None
-
-    # -----------------------------------------------------
-    # OPTION 2: RESEARCH PAPER URL
-    # -----------------------------------------------------
-
-    else:
-
-        with st.form("research_url_form"):
-
-            research_url = st.text_input(
-                "Research paper URL",
-                placeholder="https://arxiv.org/abs/1706.03762",
-                help=(
-                    "Supports direct PDF links, arXiv HTML "
-                    "pages and article webpages."
-                ),
+            uploaded_file = st.file_uploader(
+                "Import research paper",
+                type=["pdf"],
+                key="research_pdf",
+                help="Upload a PDF research paper for analysis.",
             )
 
-            submitted = st.form_submit_button(
-                "🌐 Fetch Research Paper",
-                use_container_width=True,
-            )
+            if uploaded_file is not None:
 
-        if submitted:
+                pdf_bytes = uploaded_file.getvalue()
 
-            if not research_url.strip():
-
-                st.warning(
-                    "Please enter a research paper URL."
-                )
-
-            else:
-
-                research_url = research_url.strip()
-
-                url_hash = hashlib.sha256(
-                    research_url.encode("utf-8")
+                file_hash = hashlib.sha256(
+                    pdf_bytes
                 ).hexdigest()
 
-                if (
-                    url_hash != st.session_state.paper_hash
-                    or st.session_state.paper_data is None
-                ):
+                if file_hash != st.session_state.paper_hash:
 
                     reset_paper_state()
 
-                    st.session_state.paper_hash = url_hash
+                    st.session_state.paper_hash = file_hash
 
                     try:
 
                         with st.spinner(
-                            "Fetching and extracting research paper..."
+                            "Extracting PDF content..."
                         ):
 
-                            extracted_data = cached_extract_url(
-                                research_url,
-                                cache_version="wikipedia-cleanup-v2",
+                            extracted_data = cached_extract_pdf(
+                                pdf_bytes
                             )
 
                         if not isinstance(extracted_data, dict):
                             raise ValueError(
-                                "URL reader returned invalid data."
+                                "PDF reader returned invalid data."
                             )
 
                         if not extracted_data.get("success"):
                             raise ValueError(
-                                "No readable research paper content was found."
+                                "No readable text was extracted from this PDF."
                             )
+
+                        extracted_data.setdefault(
+                            "source_type",
+                            "Uploaded PDF",
+                        )
 
                         st.session_state.paper_data = extracted_data
 
                         st.session_state.paper_record_id = save_paper(
                             extracted_data,
-                            url_hash,
+                            file_hash,
                         )
 
                         log_event(
@@ -774,7 +799,7 @@ with left_panel:
                             "Research paper imported",
                             extracted_data.get(
                                 "source_type",
-                                "Research URL",
+                                "Uploaded PDF",
                             ),
                             paper_id=st.session_state.paper_record_id,
                         )
@@ -788,268 +813,377 @@ with left_panel:
 
                         paper_data = None
 
+        # -------------------------------------------------
+        # OPTION 2: RESEARCH URL
+        # -------------------------------------------------
+
+        else:
+
+            with st.form("research_url_form"):
+
+                research_url = st.text_input(
+                    "Research paper URL",
+                    placeholder="https://arxiv.org/abs/1706.03762",
+                    help=(
+                        "Supports direct PDF links, arXiv HTML "
+                        "pages and article webpages."
+                    ),
+                )
+
+                submitted = st.form_submit_button(
+                    "Fetch Research Paper",
+                    use_container_width=True,
+                    type="primary",
+                )
+
+            if submitted:
+
+                if not research_url.strip():
+
+                    st.warning(
+                        "Please enter a research paper URL."
+                    )
+
                 else:
 
-                    paper_data = st.session_state.paper_data
+                    research_url = research_url.strip()
 
-    # -----------------------------------------------------
-    # REFRESH PAPER DATA
-    # -----------------------------------------------------
+                    url_hash = hashlib.sha256(
+                        research_url.encode("utf-8")
+                    ).hexdigest()
 
+                    if (
+                        url_hash != st.session_state.paper_hash
+                        or st.session_state.paper_data is None
+                    ):
+
+                        reset_paper_state()
+
+                        st.session_state.paper_hash = url_hash
+
+                        try:
+
+                            with st.spinner(
+                                "Fetching and extracting research paper..."
+                            ):
+
+                                extracted_data = cached_extract_url(
+                                    research_url,
+                                    cache_version="wikipedia-cleanup-v2",
+                                )
+
+                            if not isinstance(extracted_data, dict):
+                                raise ValueError(
+                                    "URL reader returned invalid data."
+                                )
+
+                            if not extracted_data.get("success"):
+                                raise ValueError(
+                                    "No readable research paper content was found."
+                                )
+
+                            st.session_state.paper_data = extracted_data
+
+                            st.session_state.paper_record_id = save_paper(
+                                extracted_data,
+                                url_hash,
+                            )
+
+                            log_event(
+                                "paper_import",
+                                "Research paper imported",
+                                extracted_data.get(
+                                    "source_type",
+                                    "Research URL",
+                                ),
+                                paper_id=st.session_state.paper_record_id,
+                            )
+
+                            paper_data = extracted_data
+
+                        except Exception as error:
+
+                            st.session_state.paper_hash = None
+                            st.session_state.summary_error = str(error)
+
+                            paper_data = None
+
+                    else:
+
+                        paper_data = st.session_state.paper_data
+
+    # Always use the latest session-state document.
     paper_data = st.session_state.paper_data
 
     # -----------------------------------------------------
-    # DISPLAY ERRORS
+    # IMPORT ERRORS
     # -----------------------------------------------------
 
     if st.session_state.summary_error and paper_data is None:
 
-        st.error(
-            st.session_state.summary_error
-        )
+        st.error(st.session_state.summary_error)
 
     # -----------------------------------------------------
-    # DISPLAY PAPER INFORMATION
+    # DOCUMENT OVERVIEW AND SUMMARY
     # -----------------------------------------------------
 
     if paper_data is not None and paper_data.get("success"):
 
         metadata = paper_data.get("metadata", {})
 
-        st.success(
-            "Research paper imported successfully!"
-        )
-
         st.markdown(
-            """
-            <div class="rm-section-label">DOCUMENT INFORMATION</div>
-            <div class="rm-section-title">📑 Document Overview</div>
-            """,
+            '<div class="rm-section-label" style="margin-top:1.3rem;">DOCUMENT DETAILS</div>',
             unsafe_allow_html=True,
         )
 
-        st.markdown(
-            f"""
-            <div class="rm-document-title">
-                {metadata.get("title", "Unknown title")}
-            </div>
-            """,
-            unsafe_allow_html=True,
-        )
-
-        st.write(
-            f"**Author:** {metadata.get('author', 'Unknown author')}"
-        )
-
-        source_type = paper_data.get(
-            "source_type",
-            "Research document",
-        )
-
-        st.caption(f"Source: {source_type}")
-
-        source_url = paper_data.get("source_url", "")
-
-        if source_url:
+        with st.container(border=True):
 
             st.markdown(
-                f"[Open original research paper]({source_url})"
+                '<div class="rm-card-heading">📑 Document Overview</div>',
+                unsafe_allow_html=True,
             )
 
-        col1, col2 = st.columns(2)
+            st.markdown(
+                f"""
+                <div class="rm-document-title">
+                    {metadata.get("title", "Unknown title")}
+                </div>
+                """,
+                unsafe_allow_html=True,
+            )
 
-        col1.metric(
-            "Total Pages",
-            paper_data.get("total_pages", 1),
-        )
+            st.markdown(
+                f"""
+                <div class="rm-muted-text">
+                    Author: {metadata.get("author", "Unknown author")}
+                </div>
+                """,
+                unsafe_allow_html=True,
+            )
 
-        col2.metric(
-            "Extracted Words",
-            f"{paper_data.get('total_words', 0):,}",
-        )
+            source_type = paper_data.get(
+                "source_type",
+                "Research document",
+            )
 
-        for warning in paper_data.get("warnings", []):
+            st.caption(f"Source: {source_type}")
 
-            st.warning(warning)
+            source_url = paper_data.get("source_url", "")
 
-        st.divider()
+            if source_url:
+                st.markdown(
+                    f"[Open original research paper]({source_url})"
+                )
+
+            metric_col1, metric_col2 = st.columns(2)
+
+            with metric_col1:
+                st.metric(
+                    "Total Pages",
+                    paper_data.get("total_pages", 1),
+                )
+
+            with metric_col2:
+                st.metric(
+                    "Extracted Words",
+                    f"{paper_data.get('total_words', 0):,}",
+                )
+
+            for warning in paper_data.get("warnings", []):
+                st.warning(warning)
 
         # -------------------------------------------------
         # AUTOMATIC RESEARCH SUMMARY
         # -------------------------------------------------
 
         st.markdown(
-            """
-            <div class="rm-section-label">AI ANALYSIS</div>
-            <div class="rm-section-title">✨ Automatic Research Summary</div>
-            <div class="rm-section-description">
-                A structured overview generated from your imported paper.
-            </div>
-            """,
+            '<div class="rm-section-label" style="margin-top:1.3rem;">AI-GENERATED INSIGHTS</div>',
             unsafe_allow_html=True,
         )
 
-        if (
-            st.session_state.paper_summary is None
-            and st.session_state.summary_error is None
-            and not st.session_state.summary_running
-        ):
+        with st.container(border=True):
 
-            st.session_state.summary_running = True
-
-            progress_bar = None
-
-            try:
-
-                progress_bar = st.progress(0)
-
-                def update_progress(value):
-
-                    percentage = int(float(value) * 100)
-
-                    percentage = max(
-                        0,
-                        min(100, percentage),
-                    )
-
-                    progress_bar.progress(percentage)
-
-                with st.spinner(
-                    "ResearchMind AI is analyzing your research paper..."
-                ):
-
-                    result = summarize_with_fallback(
-                        paper_data=paper_data,
-                        preferred_provider=selected_model,
-                        progress_callback=update_progress,
-                    )
-
-                if not isinstance(result, dict):
-                    raise ValueError(
-                        "Summary fallback returned an invalid result."
-                    )
-
-                summary = result.get("text", "")
-
-                if not summary or not str(summary).strip():
-                    raise ValueError(
-                        "The AI model returned an empty summary."
-                    )
-
-                st.session_state.paper_summary = str(summary)
-
-                if st.session_state.paper_record_id:
-
-                    save_summary(
-                        st.session_state.paper_record_id,
-                        str(summary),
-                    )
-
-                    log_event(
-                        "summary",
-                        "Research summary generated",
-                        (
-                            f"{result.get('provider', 'Unknown provider')} / "
-                            f"{result.get('model', 'Unknown model')}"
-                        ),
-                        str(summary),
-                        st.session_state.paper_record_id,
-                    )
-
-                st.session_state.summary_provider = result.get(
-                    "provider",
-                    "Unknown provider",
-                )
-
-                st.session_state.summary_model = result.get(
-                    "model",
-                    "Unknown model",
-                )
-
-                st.session_state.summary_fallback_used = result.get(
-                    "fallback_used",
-                    False,
-                )
-
-                st.session_state.summary_fallback_reason = result.get(
-                    "fallback_reason"
-                )
-
-                st.session_state.summary_error = None
-
-            except Exception as error:
-
-                print("\n========== RESEARCH SUMMARY ERROR ==========")
-                print(f"Error type: {type(error).__name__}")
-                print(f"Error message: {error}")
-                traceback.print_exc()
-                print("============================================\n")
-
-                st.session_state.summary_error = str(error)
-
-            finally:
-
-                if progress_bar is not None:
-                    progress_bar.empty()
-
-                st.session_state.summary_running = False
-
-        # -------------------------------------------------
-        # DISPLAY SUMMARY
-        # -------------------------------------------------
-
-        if st.session_state.paper_summary:
-
-            st.caption(
-                f"Provider: {st.session_state.summary_provider} | "
-                f"Model: {st.session_state.summary_model}"
-            )
-
-            if st.session_state.summary_fallback_used:
-
-                st.warning(
-                    "Gemini was unavailable. "
-                    "Qwen generated this summary instead. "
-                    f"Reason: {st.session_state.summary_fallback_reason}"
-                )
-
-            summary_text = str(
-                st.session_state.paper_summary
-            ).strip()
-
-            summary_text = re.sub(
-                r"^\s*```(?:markdown|md|text)?\s*\n",
-                "",
-                summary_text,
-                flags=re.IGNORECASE,
-            )
-
-            summary_text = re.sub(
-                r"\n```\s*$",
-                "",
-                summary_text,
+            st.markdown(
+                '<div class="rm-card-heading">✨ Research Summary</div>',
+                unsafe_allow_html=True,
             )
 
             st.markdown(
-                summary_text,
-                unsafe_allow_html=False,
+                """
+                <div class="rm-card-description">
+                    A structured overview generated from your
+                    imported research paper.
+                </div>
+                """,
+                unsafe_allow_html=True,
             )
 
-        elif st.session_state.summary_error:
-
-            st.error(
-                st.session_state.summary_error
-            )
-
-            if st.button(
-                "🔄 Retry summary generation",
-                use_container_width=True,
+            if (
+                st.session_state.paper_summary is None
+                and st.session_state.summary_error is None
+                and not st.session_state.summary_running
             ):
 
-                st.session_state.summary_error = None
-                st.session_state.summary_running = False
+                st.session_state.summary_running = True
 
-                st.rerun()
+                progress_bar = None
+
+                try:
+
+                    progress_bar = st.progress(0)
+
+                    def update_progress(value):
+
+                        percentage = int(float(value) * 100)
+
+                        percentage = max(
+                            0,
+                            min(100, percentage),
+                        )
+
+                        progress_bar.progress(percentage)
+
+                    with st.spinner(
+                        "ResearchMind AI is analyzing your research paper..."
+                    ):
+
+                        result = summarize_with_fallback(
+                            paper_data=paper_data,
+                            preferred_provider=selected_model,
+                            progress_callback=update_progress,
+                        )
+
+                    if not isinstance(result, dict):
+                        raise ValueError(
+                            "Summary fallback returned an invalid result."
+                        )
+
+                    summary = result.get("text", "")
+
+                    if not summary or not str(summary).strip():
+                        raise ValueError(
+                            "The AI model returned an empty summary."
+                        )
+
+                    st.session_state.paper_summary = str(summary)
+
+                    if st.session_state.paper_record_id:
+
+                        save_summary(
+                            st.session_state.paper_record_id,
+                            str(summary),
+                        )
+
+                        log_event(
+                            "summary",
+                            "Research summary generated",
+                            (
+                                f"{result.get('provider', 'Unknown provider')} / "
+                                f"{result.get('model', 'Unknown model')}"
+                            ),
+                            str(summary),
+                            st.session_state.paper_record_id,
+                        )
+
+                    st.session_state.summary_provider = result.get(
+                        "provider",
+                        "Unknown provider",
+                    )
+
+                    st.session_state.summary_model = result.get(
+                        "model",
+                        "Unknown model",
+                    )
+
+                    st.session_state.summary_fallback_used = result.get(
+                        "fallback_used",
+                        False,
+                    )
+
+                    st.session_state.summary_fallback_reason = result.get(
+                        "fallback_reason",
+                    )
+
+                    st.session_state.summary_error = None
+
+                except Exception as error:
+
+                    print(
+                        "\n========== RESEARCH SUMMARY ERROR =========="
+                    )
+
+                    print(f"Error type: {type(error).__name__}")
+                    print(f"Error message: {error}")
+
+                    traceback.print_exc()
+
+                    print(
+                        "============================================\n"
+                    )
+
+                    st.session_state.summary_error = str(error)
+
+                finally:
+
+                    if progress_bar is not None:
+                        progress_bar.empty()
+
+                    st.session_state.summary_running = False
+
+            # -------------------------------------------------
+            # DISPLAY GENERATED SUMMARY
+            # -------------------------------------------------
+
+            if st.session_state.paper_summary:
+
+                st.caption(
+                    f"Provider: {st.session_state.summary_provider} | "
+                    f"Model: {st.session_state.summary_model}"
+                )
+
+                if st.session_state.summary_fallback_used:
+
+                    st.warning(
+                        "Gemini was unavailable. "
+                        "Qwen generated this summary instead. "
+                        f"Reason: {st.session_state.summary_fallback_reason}"
+                    )
+
+                summary_text = str(
+                    st.session_state.paper_summary
+                ).strip()
+
+                summary_text = re.sub(
+                    r"^\s*```(?:markdown|md|text)?\s*\n",
+                    "",
+                    summary_text,
+                    flags=re.IGNORECASE,
+                )
+
+                summary_text = re.sub(
+                    r"\n```\s*$",
+                    "",
+                    summary_text,
+                )
+
+                st.markdown(
+                    summary_text,
+                    unsafe_allow_html=False,
+                )
+
+            elif st.session_state.summary_error:
+
+                st.error(st.session_state.summary_error)
+
+                if st.button(
+                    "Retry summary generation",
+                    key="retry_summary",
+                ):
+
+                    st.session_state.summary_error = None
+                    st.session_state.summary_running = False
+
+                    st.rerun()
 
         # -------------------------------------------------
         # EXTRACTED RESEARCH TEXT
@@ -1062,48 +1196,44 @@ with left_panel:
             if not full_text and paper_data.get("pages"):
 
                 full_text = "\n\n".join(
-                    (
-                        f"[PAGE {page.get('page_number', 1)}]\n"
-                        f"{page.get('text', '')}"
-                    )
+                    f"[PAGE {page.get('page_number', 1)}]\n"
+                    f"{page.get('text', '')}"
                     for page in paper_data["pages"]
                     if isinstance(page, dict)
                 )
 
-            st.text(
-                full_text[:10000]
-            )
+            st.text(full_text[:10000])
 
             if len(full_text) > 10000:
-
                 st.caption(
                     "Showing the first 10,000 characters."
                 )
 
     # -----------------------------------------------------
-    # WELCOME SCREEN
+    # WELCOME STATE
     # -----------------------------------------------------
 
     elif paper_data is None and not st.session_state.summary_error:
 
-        st.markdown(
-            """
-            <div class="rm-empty-state">
-                <div class="rm-empty-icon">📚</div>
-                <div class="rm-empty-title">
-                    Welcome to ResearchMind AI
+        with st.container(border=True):
+
+            st.markdown(
+                """
+                <div class="rm-empty-state">
+                    <div class="rm-empty-icon">📚</div>
+                    <div class="rm-empty-title">
+                        Your research workspace starts here
+                    </div>
+                    <div class="rm-empty-description">
+                        Upload a research paper or enter a paper URL.
+                        ResearchMind AI will extract its content,
+                        generate a structured summary and help you
+                        explore its findings.
+                    </div>
                 </div>
-                <div class="rm-empty-description">
-                    Import a research paper to begin your workspace.
-                    <br><br>
-                    Generate structured summaries, understand
-                    methodologies, identify research contributions
-                    and explore academic publications.
-                </div>
-            </div>
-            """,
-            unsafe_allow_html=True,
-        )
+                """,
+                unsafe_allow_html=True,
+            )
 
 
 # =========================================================
@@ -1112,191 +1242,198 @@ with left_panel:
 
 with right_panel:
 
-    st.markdown(
-        """
-        <div class="rm-section-label">INTERACTIVE AI WORKSPACE</div>
-        <div class="rm-section-title">🤖 AI Research Assistant</div>
-        <div class="rm-section-description">
-            Ask questions and explore the contents of your research paper.
-        </div>
-        """,
-        unsafe_allow_html=True,
-    )
+    with st.container(border=True):
 
-    st.markdown(
-        f"""
-        <span class="rm-status">
-            <span class="rm-status-dot"></span>
-            Selected model: {selected_model}
-        </span>
-        """,
-        unsafe_allow_html=True,
-    )
+        st.markdown(
+            '<div class="rm-section-label">INTERACTIVE AI WORKSPACE</div>',
+            unsafe_allow_html=True,
+        )
 
-    st.write("")
-
-    if st.session_state.paper_data is None:
+        st.markdown(
+            '<div class="rm-card-heading">🤖 AI Research Assistant</div>',
+            unsafe_allow_html=True,
+        )
 
         st.markdown(
             """
-            <div class="rm-empty-state">
-                <div class="rm-empty-icon">💬</div>
-                <div class="rm-empty-title">
-                    Your research conversation starts here
-                </div>
-                <div class="rm-empty-description">
-                    Import a research paper to ask questions,
-                    understand findings and explore its methodology.
-                </div>
+            <div class="rm-card-description">
+                Ask questions and explore the contents
+                of your research paper.
             </div>
             """,
             unsafe_allow_html=True,
         )
 
-    else:
-
-        st.markdown("### Ask about your research paper")
-
-        # -------------------------------------------------
-        # DISPLAY CHAT HISTORY
-        # -------------------------------------------------
-
-        for message in st.session_state.messages:
-
-            with st.chat_message(message["role"]):
-
-                st.markdown(
-                    message["content"]
-                )
-
-                if message.get("provider"):
-
-                    st.caption(
-                        f"Provider: {message['provider']} | "
-                        f"Model: {message.get('model', 'Unknown')}"
-                    )
-
-                if message.get("fallback_used"):
-
-                    st.warning(
-                        "Gemini was unavailable. "
-                        "This answer was generated using Qwen."
-                    )
-
-        # -------------------------------------------------
-        # CHAT INPUT
-        # -------------------------------------------------
-
-        question = st.chat_input(
-            "Ask anything about this research paper..."
+        st.markdown(
+            f"""
+            <div class="rm-provider-label">
+                ● Selected model: {selected_model}
+            </div>
+            """,
+            unsafe_allow_html=True,
         )
 
-        if question:
+        if selected_model == PROVIDER_GEMINI:
+            st.caption(f"Model: {GEMINI_MODEL}")
+        else:
+            st.caption(f"Model: {QWEN_MODEL}")
 
-            st.session_state.messages.append(
-                {
-                    "role": "user",
-                    "content": question,
-                }
+        if st.session_state.paper_data is None:
+
+            st.markdown(
+                """
+                <div class="rm-empty-state">
+                    <div class="rm-empty-icon">💬</div>
+                    <div class="rm-empty-title">
+                        Your research conversation starts here
+                    </div>
+                    <div class="rm-empty-description">
+                        Import a research paper to ask questions,
+                        understand findings and explore its methodology.
+                    </div>
+                </div>
+                """,
+                unsafe_allow_html=True,
             )
 
-            try:
+        else:
 
-                with st.spinner(
-                    f"{selected_model} is analyzing the paper..."
-                ):
-
-                    result = answer_paper_question(
-                        paper_data=st.session_state.paper_data,
-                        question=question,
-                        chat_history=st.session_state.messages[:-1],
-                        selected_model=selected_model,
-                    )
-
-                answer = result.get("text", "")
-
-                if not answer or not str(answer).strip():
-                    raise ValueError(
-                        "The AI model returned an empty response."
-                    )
-
-                provider = result.get(
-                    "provider",
-                    "Unknown provider",
-                )
-
-                model = result.get(
-                    "model",
-                    "Unknown model",
-                )
-
-                fallback_used = result.get(
-                    "fallback_used",
-                    False,
-                )
-
-                fallback_reason = result.get(
-                    "fallback_reason"
-                )
-
-                st.session_state.chat_provider = provider
-                st.session_state.chat_model = model
-
-            except Exception as error:
-
-                answer = (
-                    "Sorry, I couldn't answer that question.\n\n"
-                    f"**Error:** {error}"
-                )
-
-                provider = None
-                model = None
-                fallback_used = False
-                fallback_reason = None
-
-            # ---------------------------------------------
-            # SAVE CHAT ACTIVITY
-            # ---------------------------------------------
-
-            if st.session_state.paper_record_id:
-
-                log_event(
-                    "question",
-                    "Question asked",
-                    question,
-                    question,
-                    st.session_state.paper_record_id,
-                )
-
-                log_event(
-                    "answer",
-                    "AI answer viewed",
-                    f"Provider: {provider or 'Unavailable'}",
-                    str(answer),
-                    st.session_state.paper_record_id,
-                )
-
-            # ---------------------------------------------
-            # SAVE ASSISTANT MESSAGE
-            # ---------------------------------------------
-
-            st.session_state.messages.append(
-                {
-                    "role": "assistant",
-                    "content": str(answer),
-                    "provider": provider,
-                    "model": model,
-                    "fallback_used": fallback_used,
-                    "fallback_reason": fallback_reason,
-                }
+            st.markdown(
+                "#### Ask about your research paper"
             )
 
-            st.rerun()
+            # -------------------------------------------------
+            # DISPLAY CHAT HISTORY
+            # -------------------------------------------------
 
-        st.caption(
-            "Answers use retrieved paper content. "
-            "Page references are included where supported."
-        )
+            for message in st.session_state.messages:
+
+                with st.chat_message(message["role"]):
+
+                    st.markdown(
+                        message["content"]
+                    )
+
+                    if message.get("provider"):
+
+                        st.caption(
+                            f"Provider: {message['provider']} | "
+                            f"Model: {message.get('model', 'Unknown')}"
+                        )
+
+                    if message.get("fallback_used"):
+
+                        st.warning(
+                            "Gemini was unavailable. "
+                            "This answer was generated using Qwen."
+                        )
+
+            # -------------------------------------------------
+            # CHAT INPUT
+            # -------------------------------------------------
+
+            question = st.chat_input(
+                "Ask anything about this research paper..."
+            )
+
+            if question:
+
+                st.session_state.messages.append(
+                    {
+                        "role": "user",
+                        "content": question,
+                    }
+                )
+
+                try:
+
+                    with st.spinner(
+                        f"{selected_model} is analyzing the paper..."
+                    ):
+
+                        result = answer_paper_question(
+                            paper_data=st.session_state.paper_data,
+                            question=question,
+                            chat_history=st.session_state.messages[:-1],
+                            selected_model=selected_model,
+                        )
+
+                    answer = result.get("text", "")
+
+                    if not answer or not str(answer).strip():
+                        raise ValueError(
+                            "The AI model returned an empty response."
+                        )
+
+                    provider = result.get(
+                        "provider",
+                        "Unknown provider",
+                    )
+
+                    model = result.get(
+                        "model",
+                        "Unknown model",
+                    )
+
+                    fallback_used = result.get(
+                        "fallback_used",
+                        False,
+                    )
+
+                    fallback_reason = result.get(
+                        "fallback_reason",
+                    )
+
+                    st.session_state.chat_provider = provider
+                    st.session_state.chat_model = model
+
+                except Exception as error:
+
+                    answer = (
+                        "Sorry, I couldn't answer that question.\n\n"
+                        f"**Error:** {error}"
+                    )
+
+                    provider = None
+                    model = None
+                    fallback_used = False
+                    fallback_reason = None
+
+                if st.session_state.paper_record_id:
+
+                    log_event(
+                        "question",
+                        "Question asked",
+                        question,
+                        question,
+                        st.session_state.paper_record_id,
+                    )
+
+                    log_event(
+                        "answer",
+                        "AI answer viewed",
+                        f"Provider: {provider or 'Unavailable'}",
+                        str(answer),
+                        st.session_state.paper_record_id,
+                    )
+
+                st.session_state.messages.append(
+                    {
+                        "role": "assistant",
+                        "content": str(answer),
+                        "provider": provider,
+                        "model": model,
+                        "fallback_used": fallback_used,
+                        "fallback_reason": fallback_reason,
+                    }
+                )
+
+                st.rerun()
+
+            st.caption(
+                "Answers use retrieved paper content. "
+                "Page references are included where supported."
+            )
 
 
 # =========================================================
@@ -1309,10 +1446,10 @@ st.markdown(
     f"""
     <div class="rm-footer">
         ResearchMind AI v{APP_VERSION}
-        &nbsp;•&nbsp;
+        &nbsp;·&nbsp;
         Gemini + Ollama Hybrid Architecture
-        &nbsp;•&nbsp;
-        Built for academic research
+        &nbsp;·&nbsp;
+        Built for research exploration
     </div>
     """,
     unsafe_allow_html=True,
