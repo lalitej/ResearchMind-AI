@@ -383,7 +383,7 @@ Provide a helpful, evidence-grounded answer.
 
 # =========================================
 # CUSTOM CSS
-# The shared design system and optional dark mode are applied by research_tools.ui.apply_theme().
+# The shared design system and optional dark mode are applied by research_tools.ui.apply_theme.
 
 
 # =========================================
@@ -402,6 +402,7 @@ with st.sidebar:
 
     # Both providers are selectable in local and cloud deployments.
     # Ollama Cloud connectivity is handled by the Ollama client.
+
     available_models = [
         PROVIDER_GEMINI,
         PROVIDER_QWEN,
@@ -757,7 +758,8 @@ with left_panel:
             "Total Pages",
             paper_data.get("total_pages", 1)
         )
-                col2.metric(
+
+        col2.metric(
             "Extracted Words",
             f"{paper_data.get('total_words', 0):,}"
         )
