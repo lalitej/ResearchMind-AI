@@ -11,7 +11,6 @@ from document_processing.url_reader import extract_research_url
 from ai_engines.gemini_client import (
     summarize_with_fallback,
     generate_answer_with_fallback,
-    is_cloud_deployment,
 )
 
 from research_tools.history_store import init_db, save_paper, save_summary, log_event
@@ -401,19 +400,12 @@ with st.sidebar:
 
     st.markdown("### AI Configuration")
 
-    # Local Ollama is not automatically available on Streamlit Cloud.
-    cloud_mode = is_cloud_deployment()
-
+    # Both providers are selectable in local and cloud deployments.
+    # Ollama Cloud connectivity is handled by the Ollama client.
     available_models = [
-    PROVIDER_GEMINI,
-    PROVIDER_QWEN
-]
-
-    if (
-        cloud_mode
-        and st.session_state.get("selected_model") != PROVIDER_GEMINI
-    ):
-        st.session_state["selected_model"] = PROVIDER_GEMINI
+        PROVIDER_GEMINI,
+        PROVIDER_QWEN,
+    ]
 
     selected_model = st.selectbox(
         "Select AI model",
@@ -673,9 +665,9 @@ with left_panel:
                         ):
 
                             extracted_data = cached_extract_url(
-    research_url,
-    cache_version="wikipedia-cleanup-v2"
-)
+                                research_url,
+                                cache_version="wikipedia-cleanup-v2"
+                            )
 
                         if not isinstance(extracted_data, dict):
 
@@ -765,8 +757,7 @@ with left_panel:
             "Total Pages",
             paper_data.get("total_pages", 1)
         )
-
-        col2.metric(
+                col2.metric(
             "Extracted Words",
             f"{paper_data.get('total_words', 0):,}"
         )
