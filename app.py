@@ -268,7 +268,7 @@ def cached_extract_pdf(
 @st.cache_data(show_spinner=False)
 def cached_extract_url(
     url,
-    cache_version="url-extraction-timing-v3",
+    cache_version="url-extraction-wiki-clean-v4",
 ):
     return extract_research_url(url)
 
@@ -870,7 +870,7 @@ with left_panel:
 
                                 extracted_data = cached_extract_url(
                                     research_url,
-                                    cache_version="url-extraction-timing-v3",
+                                    cache_version="url-extraction-wiki-clean-v4",
                                 )
 
                             if not isinstance(extracted_data, dict):
