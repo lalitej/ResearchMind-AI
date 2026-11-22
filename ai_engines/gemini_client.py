@@ -1,5 +1,6 @@
 import os
 import re
+import json
 import time
 import threading
 from concurrent.futures import ThreadPoolExecutor, as_completed
@@ -60,10 +61,29 @@ def _read_int_env(name, default):
         return default
 
 
-VERIFY_SUMMARY = os.getenv(
-    "GEMINI_VERIFY_SUMMARY",
-    "true"
+# Verification modes:
+# - smart: audit high-risk claims and apply only source-supported, exact edits.
+# - full: retain the legacy full-report verification pass.
+# - off: disable the additional verification request.
+# GEMINI_VERIFY_SUMMARY=false remains backward compatible and always disables it.
+_VERIFY_ENABLED = os.getenv(
+    "GEMINI_VERIFY_SUMMARY", "true"
 ).strip().lower() in ("1", "true", "yes", "on")
+VERIFY_MODE = os.getenv(
+    "GEMINI_VERIFICATION_MODE", "smart"
+).strip().lower()
+if VERIFY_MODE not in {"smart", "full", "off"}:
+    print(
+        f"ResearchMind: Unknown GEMINI_VERIFICATION_MODE={VERIFY_MODE!r}; "
+        "using smart verification."
+    )
+    VERIFY_MODE = "smart"
+if not _VERIFY_ENABLED:
+    VERIFY_MODE = "off"
+VERIFY_SUMMARY = VERIFY_MODE != "off"
+SMART_VERIFY_MAX_EVIDENCE_CHARS = _read_int_env(
+    "GEMINI_SMART_VERIFY_MAX_EVIDENCE_CHARS", 24000
+)
 
 QUOTA_COOLDOWN_SECONDS = _read_int_env(
     "GEMINI_QUOTA_COOLDOWN_SECONDS",
@@ -409,6 +429,13 @@ def generate_gemini_response(
         _raise_if_cooling_down()
 
         client = get_gemini_client()
+        request_started = time.perf_counter()
+        prompt_chars = len(prompt or "")
+        print(
+            f"ResearchMind: Gemini request started | model={selected_model} | "
+            f"prompt_chars={prompt_chars:,} | output_limit={max_output_tokens} | "
+            f"attempt={attempt}/{MAX_ATTEMPTS}"
+        )
 
         try:
             response = client.models.generate_content(
@@ -421,7 +448,11 @@ def generate_gemini_response(
             )
 
         except Exception as error:
-
+            request_elapsed = time.perf_counter() - request_started
+            print(
+                f"ResearchMind: Gemini request failed after "
+                f"{request_elapsed:.2f}s ({type(error).__name__})."
+            )
             classified = classify_gemini_error(error)
 
             if classified is None:
@@ -499,7 +530,12 @@ def generate_gemini_response(
             time.sleep(wait_time)
             continue
 
+        request_elapsed = time.perf_counter() - request_started
         text = getattr(response, "text", None)
+        print(
+            f"ResearchMind: Gemini request completed in "
+            f"{request_elapsed:.2f}s | response_chars={len(text or ''):,}."
+        )
 
         if not text or not text.strip():
             raise GeminiUnavailableError(
@@ -1381,35 +1417,235 @@ Return the corrected report now.
     return verified.strip()
 
 
-def _verify_or_keep_draft(full_text, draft_summary, model):
-
-    if not VERIFY_SUMMARY:
-        print(
-            "ResearchMind: Verification disabled "
-            "(GEMINI_VERIFY_SUMMARY=false)."
+def _numeric_tokens(text):
+    """Return normalized numeric tokens without matching inside larger numbers."""
+    return {
+        value.replace(",", "").rstrip("%")
+        for value in re.findall(
+            r"(?<![\w.])\d+(?:,\d{3})*(?:\.\d+)?%?(?![\w.])",
+            text or ""
         )
-        return draft_summary
+    }
 
-    print(
-        "ResearchMind: Verifying report against original paper text."
+
+def _build_smart_verification_evidence(
+    original_paper_text,
+    draft_summary,
+    max_chars=None
+):
+    """Select source excerpts relevant to numeric claims without truncating report evidence."""
+    limit = max_chars or SMART_VERIFY_MAX_EVIDENCE_CHARS
+    source = (original_paper_text or "").strip()
+    if not source:
+        return ""
+
+    # Always include the opening material for title, author, abstract and study context.
+    opening_limit = min(5000, max(1500, limit // 4))
+    opening = source[:opening_limit]
+    remaining = max(0, limit - len(opening))
+    if remaining <= 0:
+        return opening
+
+    draft_numbers = _numeric_tokens(draft_summary)
+    draft_terms = set(re.findall(r"[a-z][a-z0-9-]{3,}", draft_summary.lower()))
+    stop_terms = {
+        "about", "above", "after", "again", "against", "also", "among",
+        "because", "before", "being", "between", "both", "could", "does",
+        "during", "each", "from", "have", "having", "into", "more", "most",
+        "other", "over", "same", "should", "some", "such", "than", "that",
+        "their", "there", "these", "they", "this", "those", "through", "under",
+        "using", "very", "were", "what", "when", "where", "which", "while",
+        "with", "within", "would", "report", "paper", "study", "section"
+    }
+    draft_terms.difference_update(stop_terms)
+    priority_terms = {
+        "method", "methods", "methodology", "dataset", "datasets", "benchmark",
+        "experiment", "experiments", "evaluation", "evaluated", "results",
+        "limitation", "limitations", "future", "novelty", "baseline", "training",
+        "validation", "testing", "accuracy", "precision", "recall", "f1",
+        "equation", "parameter", "parameters", "participants", "cohort",
+        "sample", "samples", "conclusion", "authors", "abstract", "table", "figure"
+    }
+    lines = source.splitlines()
+    selected_indices = set()
+    ranked_lines = []
+
+    for index, line in enumerate(lines):
+        line_terms = set(re.findall(r"[a-z][a-z0-9-]{3,}", line.lower()))
+        numeric_hits = draft_numbers.intersection(_numeric_tokens(line))
+        shared_terms = draft_terms.intersection(line_terms)
+        priority_hits = shared_terms.intersection(priority_terms)
+        score = (len(numeric_hits) * 6) + (len(priority_hits) * 3) + len(shared_terms)
+        if numeric_hits or len(shared_terms) >= 2 or priority_hits:
+            ranked_lines.append((score, index))
+
+    # Numeric claims rank highest, followed by methodology/results/limitation
+    # lines that share terminology with the draft. Expand each match by one
+    # neighboring line to retain nearby context and page markers.
+    for _, index in sorted(ranked_lines, reverse=True)[:400]:
+        selected_indices.update(
+            range(max(0, index - 1), min(len(lines), index + 2))
+        )
+
+    # Keep source order and explicit page markers. Avoid repeating opening lines.
+    excerpts = []
+    used = set()
+    for index in sorted(selected_indices):
+        line = lines[index].strip()
+        if not line or line in used:
+            continue
+        used.add(line)
+        candidate = "\n".join(excerpts + [line])
+        if len(candidate) > remaining:
+            continue
+        excerpts.append(line)
+
+    selected = "\n".join(excerpts)
+    if not selected:
+        # If there are no numeric claims, use a bounded source sample rather than
+        # silently claiming the entire paper was checked.
+        selected = source[opening_limit:opening_limit + remaining]
+
+    return "\n\n[RELEVANT SOURCE EXCERPTS]\n".join(
+        part for part in (opening, selected) if part
+    )[:limit]
+
+
+def verify_smart_summary(original_paper_text, draft_summary, model=None):
+    """Audit critical claims and apply only safe, exact, source-backed edits."""
+    if not original_paper_text or not original_paper_text.strip():
+        raise ValueError("Original paper text is required for verification.")
+    if not draft_summary or not draft_summary.strip():
+        raise ValueError("A draft summary is required for verification.")
+
+    evidence = _build_smart_verification_evidence(
+        original_paper_text,
+        draft_summary
+    )
+    if not evidence.strip():
+        raise GeminiUnavailableError(
+            "empty_evidence",
+            "No source excerpts were available for smart verification."
+        )
+
+    prompt = f"""
+You are ResearchMind AI's targeted evidence auditor. Audit the draft using
+ONLY the supplied excerpts from the original extracted paper.
+
+Prioritize high-risk factual claims: numerical values and units, metric names,
+dataset/task associations, model/configuration names, experimental settings,
+page references, title/author, limitations and future-work claims.
+
+IMPORTANT LIMITATIONS:
+- The supplied source is a targeted excerpt set, NOT necessarily the complete paper.
+- Do not claim the entire report or paper was exhaustively verified.
+- Do not infer missing facts or use outside knowledge.
+- Preserve distinctions between datasets, tasks, models, splits and experiments.
+- Never alter a number unless a supplied source quote directly supports the correction.
+- Do not rewrite or return the report.
+- Never modify section headings, citation markers, page citations or Markdown structure.
+- Each correction must be a minimal factual phrase replacement, not a paragraph rewrite.
+
+Return ONLY valid JSON in this exact shape:
+{{"corrections":[{{"exact_text":"short exact text occurring once in the draft",
+"replacement_text":"minimal corrected replacement",
+"source_quote":"verbatim supporting quote from supplied excerpts",
+"reason":"brief explanation"}}]}}
+
+If no clearly supported correction is needed, return {{"corrections":[]}}.
+Do not include Markdown fences or any other text.
+
+================ TARGETED SOURCE EXCERPTS ================
+{evidence}
+
+================ DRAFT REPORT ================
+{draft_summary}
+"""
+
+    raw_result = generate_gemini_response(
+        prompt,
+        model=model,
+        max_output_tokens=1800
     )
 
+    # Parse JSON defensively; malformed output must never damage the report.
     try:
-        verified = verify_final_summary(
+        payload = json.loads(raw_result)
+    except (TypeError, ValueError):
+        match = re.search(r"\{.*\}", raw_result, flags=re.DOTALL)
+        if not match:
+            raise GeminiUnavailableError(
+                "invalid_verification_output",
+                "Gemini returned an invalid smart-verification response."
+            )
+        try:
+            payload = json.loads(match.group(0))
+        except (TypeError, ValueError) as error:
+            raise GeminiUnavailableError(
+                "invalid_verification_output",
+                "Gemini returned an invalid smart-verification response."
+            ) from error
+
+    corrections = payload.get("corrections", []) if isinstance(payload, dict) else None
+    if not isinstance(corrections, list):
+        raise GeminiUnavailableError(
+            "invalid_verification_output",
+            "Smart-verification response did not contain a corrections list."
+        )
+
+    corrected_report = draft_summary
+    applied = 0
+    source_lower = evidence.casefold()
+
+    for item in corrections:
+        if not isinstance(item, dict):
+            continue
+        exact_text = item.get("exact_text")
+        replacement_text = item.get("replacement_text")
+        source_quote = item.get("source_quote")
+        if not all(isinstance(value, str) and value.strip()
+                   for value in (exact_text, replacement_text, source_quote)):
+            continue
+        if len(exact_text) > 500 or len(replacement_text) > 500 or len(source_quote) > 1200:
+            continue
+        if source_quote.casefold() not in source_lower:
+            continue
+        occurrences = corrected_report.count(exact_text)
+        if occurrences != 1:
+            continue
+        corrected_report = corrected_report.replace(
+            exact_text, replacement_text, 1
+        )
+        applied += 1
+
+    print(
+        "ResearchMind: Smart verification completed; "
+        f"{applied} source-supported correction(s) applied."
+    )
+    return corrected_report
+
+
+def _verify_or_keep_draft(full_text, draft_summary, model):
+    if VERIFY_MODE == "off":
+        print("ResearchMind: Verification disabled.")
+        return draft_summary
+
+    if VERIFY_MODE == "smart":
+        print("ResearchMind: Running targeted smart evidence verification.")
+        verifier = verify_smart_summary
+    else:
+        print("ResearchMind: Running legacy full-report verification.")
+        verifier = verify_final_summary
+
+    try:
+        return verifier(
             original_paper_text=full_text,
             draft_summary=draft_summary,
             model=model
         )
-
     except GeminiUnavailableError as error:
-        print(
-            f"ResearchMind: Verification skipped: {error}"
-        )
+        print(f"ResearchMind: Verification skipped; original draft preserved: {error}")
         return draft_summary + VERIFICATION_SKIPPED_NOTE
-
-    print("ResearchMind: Evidence verification completed.")
-
-    return verified
 
 
 # =====================================================
