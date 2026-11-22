@@ -238,6 +238,75 @@ def download_url(url):
 # HTML TEXT EXTRACTION
 # =========================================
 
+# Bibliographic sections contain citation lists rather than article content.
+# Removing them keeps the model input focused (fewer tokens, faster runs).
+WIKIPEDIA_BIBLIOGRAPHY_SECTIONS = {
+    "references",
+    "citations",
+    "further reading",
+    "external links",
+    "bibliography",
+    "works cited",
+    "sources",
+}
+
+
+def _heading_level(tag):
+    name = getattr(tag, "name", "") or ""
+    if len(name) == 2 and name[0] == "h" and name[1].isdigit():
+        return int(name[1])
+    return None
+
+
+def _remove_wikipedia_bibliography_sections(content_element):
+    """Drop top-level reference/bibliography sections from a Wikipedia body.
+
+    Supports both the modern ``div.mw-heading > h2`` markup and the legacy
+    bare ``h2`` markup. Only level-2 sections with known bibliographic titles
+    are removed, together with everything up to the next level-2 heading.
+    """
+
+    for heading in list(content_element.find_all("h2")):
+
+        if getattr(heading, "decomposed", False):
+            continue
+
+        title = re.sub(
+            r"\[\s*edit\s*\]", "", heading.get_text(" ", strip=True),
+            flags=re.I
+        ).strip().lower()
+
+        if title not in WIKIPEDIA_BIBLIOGRAPHY_SECTIONS:
+            continue
+
+        container = heading
+        parent_classes = (
+            heading.parent.get("class", []) if heading.parent else []
+        )
+        if "mw-heading" in parent_classes:
+            container = heading.parent
+
+        for sibling in list(container.find_next_siblings()):
+
+            sibling_heading = (
+                sibling
+                if _heading_level(sibling) is not None
+                else sibling.find(re.compile(r"^h[1-6]$"))
+                if "mw-heading" in (sibling.get("class", []) or [])
+                else None
+            )
+
+            if (
+                sibling_heading is not None
+                and _heading_level(sibling_heading) <= 2
+            ):
+                break
+
+            sibling.decompose()
+
+        container.decompose()
+
+
 def extract_html_content(html):
 
     # BeautifulSoup detects webpage encodings.
@@ -403,13 +472,35 @@ def extract_html_content(html):
             ".references",
             ".catlinks",
             ".portal",
-            ".noprint"
+            ".noprint",
+            # Inline citation markers such as "[12]", "[edit]" links and
+            # reference-list wrappers add noise and tokens, not content.
+            "sup.reference",
+            ".mw-editsection",
+            ".reflist",
+            ".refbegin",
+            ".cite-bracket",
+            ".shortdescription",
+            ".sistersitebox",
+            ".mw-empty-elt",
+            ".navbar",
+            "#toc",
+            ".toc"
         )
 
         for selector in wikipedia_noise_selectors:
 
             for element in content_element.select(selector):
                 element.decompose()
+
+        try:
+            _remove_wikipedia_bibliography_sections(content_element)
+        except Exception as error:
+            # Cleaning is an optimization; never fail extraction over it.
+            print(
+                "ResearchMind: Wikipedia bibliography trimming skipped "
+                f"({type(error).__name__})."
+            )
 
     # -------------------------------------
     # Extract readable text
