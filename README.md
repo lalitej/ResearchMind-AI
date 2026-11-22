@@ -54,3 +54,17 @@ Replace the placeholder with your actual key inside Streamlit Cloud Secrets only
 Cloud mode uses Gemini and disables local Ollama/Qwen because your personal computer's Ollama service is not automatically accessible from Streamlit Cloud.
 
 Note: SQLite history on Streamlit Cloud may be lost after restarts or redeployments.
+
+## Gemini performance and verification settings
+
+Gemini now uses **targeted smart verification** by default. It checks high-risk claims against selected source excerpts and applies only minimal, exact corrections supported by a verbatim source quote. It does not regenerate the complete report during verification, and it preserves report headings, citation markers and page references unless a supported factual correction is required.
+
+Optional environment settings (also usable in Streamlit Secrets):
+
+- `GEMINI_VERIFICATION_MODE=smart` (default): targeted evidence audit.
+- `GEMINI_VERIFICATION_MODE=full`: use the previous full-report verification pass.
+- `GEMINI_VERIFICATION_MODE=off`: disable the additional verification request.
+- `GEMINI_VERIFY_SUMMARY=false`: backward-compatible override that disables verification.
+- `GEMINI_SMART_VERIFY_MAX_EVIDENCE_CHARS=24000`: maximum source-excerpt characters supplied to smart verification.
+
+Gemini request timing is logged with model name, prompt size, response size and elapsed seconds. These measurements help distinguish model latency from local document-processing time without logging API keys or prompt contents.
