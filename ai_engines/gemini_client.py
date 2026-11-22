@@ -46,7 +46,6 @@ def is_cloud_deployment():
 
 MAX_DIRECT_CHARS = 28000
 MAX_CHUNK_CHARS = 30000
-MAX_WORKERS = 3
 MAX_ATTEMPTS = 3
 
 GEMINI_OUTPUT_TOKENS = 8192
@@ -59,6 +58,25 @@ def _read_int_env(name, default):
         return int(os.getenv(name, default))
     except (TypeError, ValueError):
         return default
+
+
+MAX_WORKERS = max(1, _read_int_env("GEMINI_MAX_WORKERS", 3))
+
+# Per-request network timeout. Without it a stalled Gemini request can block a
+# worker (and the whole Streamlit run) for many minutes.
+GEMINI_REQUEST_TIMEOUT_SECONDS = _read_int_env(
+    "GEMINI_REQUEST_TIMEOUT_SECONDS", 180
+)
+
+# Gemini Flash models accept very long inputs. Web articles (source_type
+# "HTML Article") up to this many characters are summarized in ONE pass instead
+# of a chunk-extraction map step followed by a final report. PDFs keep the
+# original MAX_DIRECT_CHARS threshold so table/page handling is unchanged.
+# Set GEMINI_DIRECT_HTML_CHARS=0 to restore the old chunked behaviour.
+MAX_DIRECT_HTML_CHARS = _read_int_env("GEMINI_DIRECT_HTML_CHARS", 400000)
+
+# Verification is optional; it must not stall a finished report.
+VERIFY_MAX_ATTEMPTS = max(1, _read_int_env("GEMINI_VERIFY_MAX_ATTEMPTS", 2))
 
 
 # Verification modes:
@@ -408,7 +426,91 @@ def get_gemini_client():
             describe_gemini_reason("not_configured")
         )
 
+    if GEMINI_REQUEST_TIMEOUT_SECONDS > 0:
+        try:
+            return genai.Client(
+                api_key=api_key,
+                http_options=types.HttpOptions(
+                    timeout=GEMINI_REQUEST_TIMEOUT_SECONDS * 1000
+                ),
+            )
+        except Exception as error:
+            # Older SDK versions may not accept HttpOptions(timeout=...).
+            print(
+                "ResearchMind: Could not apply Gemini request timeout "
+                f"({type(error).__name__}); using SDK default."
+            )
+
     return genai.Client(api_key=api_key)
+
+
+# =====================================================
+# 3b. REQUEST INSTRUMENTATION
+# =====================================================
+
+
+class RunStats:
+    """Thread-safe counters describing one summarization run.
+
+    Only counts, durations and stage names are stored -- never prompts,
+    responses or credentials.
+    """
+
+    def __init__(self):
+        self._lock = threading.Lock()
+        self.reset()
+
+    def reset(self):
+        with self._lock:
+            self.requests = 0
+            self.failed_requests = 0
+            self.request_seconds = 0.0
+            self.retries = 0
+            self.retry_wait_seconds = 0.0
+            self.by_stage = {}
+            self.stage_seconds = {}
+
+    def record_request(self, stage, seconds, ok=True):
+        with self._lock:
+            self.requests += 1
+            if not ok:
+                self.failed_requests += 1
+            self.request_seconds += seconds
+            self.by_stage[stage] = self.by_stage.get(stage, 0) + 1
+
+    def record_retry(self, wait_seconds):
+        with self._lock:
+            self.retries += 1
+            self.retry_wait_seconds += wait_seconds
+
+    def record_stage(self, stage, seconds):
+        with self._lock:
+            self.stage_seconds[stage] = (
+                self.stage_seconds.get(stage, 0.0) + seconds
+            )
+
+    def snapshot(self):
+        with self._lock:
+            return {
+                "requests": self.requests,
+                "failed_requests": self.failed_requests,
+                "request_seconds": round(self.request_seconds, 2),
+                "retries": self.retries,
+                "retry_wait_seconds": round(self.retry_wait_seconds, 2),
+                "requests_by_stage": dict(self.by_stage),
+                "stage_seconds": {
+                    key: round(value, 2)
+                    for key, value in self.stage_seconds.items()
+                },
+            }
+
+
+RUN_STATS = RunStats()
+
+
+def get_last_run_stats():
+    """Return counters for the most recent Gemini summarization run."""
+    return RUN_STATS.snapshot()
 
 
 # =====================================================
@@ -419,12 +521,15 @@ def get_gemini_client():
 def generate_gemini_response(
     prompt,
     model=None,
-    max_output_tokens=GEMINI_OUTPUT_TOKENS
+    max_output_tokens=GEMINI_OUTPUT_TOKENS,
+    max_attempts=None,
+    stage="request"
 ):
 
     selected_model = model or GEMINI_MODEL
+    attempts_allowed = max(1, max_attempts or MAX_ATTEMPTS)
 
-    for attempt in range(1, MAX_ATTEMPTS + 1):
+    for attempt in range(1, attempts_allowed + 1):
 
         _raise_if_cooling_down()
 
@@ -434,7 +539,7 @@ def generate_gemini_response(
         print(
             f"ResearchMind: Gemini request started | model={selected_model} | "
             f"prompt_chars={prompt_chars:,} | output_limit={max_output_tokens} | "
-            f"attempt={attempt}/{MAX_ATTEMPTS}"
+            f"attempt={attempt}/{attempts_allowed} | stage={stage}"
         )
 
         try:
@@ -449,6 +554,7 @@ def generate_gemini_response(
 
         except Exception as error:
             request_elapsed = time.perf_counter() - request_started
+            RUN_STATS.record_request(stage, request_elapsed, ok=False)
             print(
                 f"ResearchMind: Gemini request failed after "
                 f"{request_elapsed:.2f}s ({type(error).__name__})."
@@ -503,7 +609,7 @@ def generate_gemini_response(
                     retry_after=retry_delay
                 ) from error
 
-            if attempt == MAX_ATTEMPTS:
+            if attempt == attempts_allowed:
 
                 if reason == "rate_limited":
                     _start_cooldown(
@@ -524,13 +630,15 @@ def generate_gemini_response(
             print(
                 f"Gemini temporary error ({reason}). "
                 f"Retrying in {wait_time:.0f} seconds "
-                f"(attempt {attempt}/{MAX_ATTEMPTS})..."
+                f"(attempt {attempt}/{attempts_allowed})..."
             )
 
+            RUN_STATS.record_retry(wait_time)
             time.sleep(wait_time)
             continue
 
         request_elapsed = time.perf_counter() - request_started
+        RUN_STATS.record_request(stage, request_elapsed, ok=True)
         text = getattr(response, "text", None)
         print(
             f"ResearchMind: Gemini request completed in "
@@ -1337,7 +1445,8 @@ Generate the complete report now.
     return generate_gemini_response(
         prompt,
         model=model,
-        max_output_tokens=GEMINI_OUTPUT_TOKENS
+        max_output_tokens=GEMINI_OUTPUT_TOKENS,
+        stage="final_report"
     )
 
 
@@ -1405,7 +1514,8 @@ Return the corrected report now.
     verified = generate_gemini_response(
         prompt,
         model=model,
-        max_output_tokens=GEMINI_OUTPUT_TOKENS
+        max_output_tokens=GEMINI_OUTPUT_TOKENS,
+        stage="verification_full"
     )
 
     if not verified or not verified.strip():
@@ -1565,7 +1675,9 @@ Do not include Markdown fences or any other text.
     raw_result = generate_gemini_response(
         prompt,
         model=model,
-        max_output_tokens=1800
+        max_output_tokens=1800,
+        max_attempts=VERIFY_MAX_ATTEMPTS,
+        stage="verification_smart"
     )
 
     # Parse JSON defensively; malformed output must never damage the report.
@@ -1777,7 +1889,8 @@ PAPER CONTENT:
     return generate_gemini_response(
         prompt,
         model=model,
-        max_output_tokens=CHUNK_OUTPUT_TOKENS
+        max_output_tokens=CHUNK_OUTPUT_TOKENS,
+        stage="chunk"
     )
 
 
@@ -1817,6 +1930,32 @@ def _collect_full_text(paper_data):
     return pages, full_text
 
 
+def _direct_char_limit(paper_data):
+    """Largest source size summarized in a single Gemini pass."""
+    if (
+        paper_data.get("source_type") == "HTML Article"
+        and MAX_DIRECT_HTML_CHARS > MAX_DIRECT_CHARS
+    ):
+        return MAX_DIRECT_HTML_CHARS
+
+    return MAX_DIRECT_CHARS
+
+
+def _log_run_summary(total_elapsed):
+    stats = RUN_STATS.snapshot()
+    print(
+        "ResearchMind: Run summary | "
+        f"total={total_elapsed:.1f}s | "
+        f"gemini_requests={stats['requests']} "
+        f"(failed={stats['failed_requests']}) | "
+        f"gemini_request_time_sum={stats['request_seconds']}s | "
+        f"retries={stats['retries']} | "
+        f"retry_wait={stats['retry_wait_seconds']}s | "
+        f"by_stage={stats['requests_by_stage']} | "
+        f"stage_seconds={stats['stage_seconds']}"
+    )
+
+
 def _summarize_with_gemini(
     paper_data,
     model=None,
@@ -1824,15 +1963,21 @@ def _summarize_with_gemini(
 ):
 
     start_time = time.perf_counter()
+    RUN_STATS.reset()
 
     pages, full_text = _collect_full_text(paper_data)
     metadata_context = build_metadata_context(paper_data)
     total_chars = len(full_text)
+    direct_limit = _direct_char_limit(paper_data)
 
     print("\nResearchMind: Starting Gemini summarization.")
-    print(f"Extracted characters: {total_chars:,}")
+    print(
+        f"Extracted characters: {total_chars:,} "
+        f"(one-pass limit {direct_limit:,}; "
+        f"verification mode={VERIFY_MODE})"
+    )
 
-    if total_chars <= MAX_DIRECT_CHARS:
+    if total_chars <= direct_limit:
 
         print(
             "ResearchMind: Using one-pass summarization."
@@ -1841,19 +1986,27 @@ def _summarize_with_gemini(
         if progress_callback:
             progress_callback(0.2)
 
+        stage_started = time.perf_counter()
         final_summary = create_final_summary(
             full_text,
             model=model,
             metadata_context=metadata_context
         )
+        RUN_STATS.record_stage(
+            "final_report", time.perf_counter() - stage_started
+        )
 
         if progress_callback:
             progress_callback(0.75)
 
+        stage_started = time.perf_counter()
         final_summary = _verify_or_keep_draft(
             full_text,
             final_summary,
             model
+        )
+        RUN_STATS.record_stage(
+            "verification", time.perf_counter() - stage_started
         )
 
         if progress_callback:
@@ -1865,6 +2018,7 @@ def _summarize_with_gemini(
             f"ResearchMind: One-pass completed "
             f"in {elapsed:.2f} seconds."
         )
+        _log_run_summary(elapsed)
 
         return final_summary
 
@@ -1872,9 +2026,13 @@ def _summarize_with_gemini(
         "ResearchMind: Using parallel chunk summarization."
     )
 
+    stage_started = time.perf_counter()
     chunks = build_document_chunks(
         pages,
         MAX_CHUNK_CHARS
+    )
+    RUN_STATS.record_stage(
+        "chunking", time.perf_counter() - stage_started
     )
 
     if not chunks:
@@ -1883,16 +2041,17 @@ def _summarize_with_gemini(
         )
 
     print(
-        f"ResearchMind: Total chunks: {len(chunks)}"
+        f"ResearchMind: Total chunks: {len(chunks)} "
+        f"(workers={MAX_WORKERS})"
     )
 
     chunk_summaries = [None] * len(chunks)
     completed = 0
+    stage_started = time.perf_counter()
 
-    with ThreadPoolExecutor(
-        max_workers=MAX_WORKERS
-    ) as executor:
+    executor = ThreadPoolExecutor(max_workers=MAX_WORKERS)
 
+    try:
         future_to_index = {
             executor.submit(
                 summarize_chunk,
@@ -1904,30 +2063,35 @@ def _summarize_with_gemini(
             for index, chunk in enumerate(chunks)
         }
 
-        try:
-            for future in as_completed(future_to_index):
+        for future in as_completed(future_to_index):
 
-                index = future_to_index[future]
+            index = future_to_index[future]
 
-                chunk_summaries[index] = future.result()
-                completed += 1
+            chunk_summaries[index] = future.result()
+            completed += 1
 
-                print(
-                    f"ResearchMind: Completed "
-                    f"{completed}/{len(chunks)} chunks."
+            print(
+                f"ResearchMind: Completed "
+                f"{completed}/{len(chunks)} chunks."
+            )
+
+            if progress_callback:
+                progress_callback(
+                    0.75 * completed / len(chunks)
                 )
 
-                if progress_callback:
-                    progress_callback(
-                        0.75 * completed / len(chunks)
-                    )
+    except BaseException:
+        # Do not wait for in-flight requests after a failure; queued
+        # chunks are cancelled so they never reach Gemini.
+        executor.shutdown(wait=False, cancel_futures=True)
+        raise
 
-        except BaseException:
+    else:
+        executor.shutdown(wait=True)
 
-            for pending in future_to_index:
-                pending.cancel()
-
-            raise
+    RUN_STATS.record_stage(
+        "chunk_extraction", time.perf_counter() - stage_started
+    )
 
     if any(item is None for item in chunk_summaries):
         raise RuntimeError(
@@ -1946,19 +2110,27 @@ def _summarize_with_gemini(
         "ResearchMind: Generating final research report."
     )
 
+    stage_started = time.perf_counter()
     final_summary = create_final_summary(
         combined_evidence,
         model=model,
         metadata_context=metadata_context
     )
+    RUN_STATS.record_stage(
+        "final_report", time.perf_counter() - stage_started
+    )
 
     if progress_callback:
         progress_callback(0.9)
 
+    stage_started = time.perf_counter()
     final_summary = _verify_or_keep_draft(
         full_text,
         final_summary,
         model
+    )
+    RUN_STATS.record_stage(
+        "verification", time.perf_counter() - stage_started
     )
 
     if progress_callback:
@@ -1970,6 +2142,7 @@ def _summarize_with_gemini(
         f"ResearchMind: Gemini summary completed "
         f"in {elapsed:.2f} seconds."
     )
+    _log_run_summary(elapsed)
 
     return final_summary
 
@@ -3587,7 +3760,7 @@ def _make_result(
     }
 
 
-def summarize_with_fallback(
+def _summarize_with_fallback_uncached(
     paper_data,
     preferred_provider=PROVIDER_GEMINI,
     progress_callback=None
@@ -3668,6 +3841,173 @@ def summarize_with_fallback(
             fallback_reason=str(gemini_error),
             fallback_code=gemini_error.reason
         )
+
+
+# =====================================================
+# 13a. SINGLE-FLIGHT EXECUTION (NO DUPLICATE RUNS ON STREAMLIT RERUN)
+# =====================================================
+#
+# Streamlit re-executes the whole script on every widget interaction, which
+# interrupts the script thread but cannot stop the ThreadPoolExecutor workers
+# already calling Gemini. A fresh script run then started a SECOND complete
+# pipeline while the first was still running. The summary now runs in a
+# background thread keyed by document content; a rerun joins the in-flight
+# run (or reuses its finished result) instead of starting another.
+
+_FLIGHT_LOCK = threading.Lock()
+_INFLIGHT = {}
+_RESULT_CACHE = {}
+RESULT_CACHE_TTL_SECONDS = 1800
+RESULT_CACHE_MAX_ITEMS = 8
+_FLIGHT_POLL_SECONDS = 0.5
+
+
+class _Flight:
+
+    def __init__(self):
+        self.done = threading.Event()
+        self.result = None
+        self.error = None
+        self.progress = 0.0
+
+
+def _summary_cache_key(paper_data, preferred_provider):
+    import hashlib
+
+    digest = hashlib.sha256()
+
+    for page in paper_data.get("pages", []):
+        digest.update(str(page.get("page_number", "")).encode("utf-8"))
+        digest.update(str(page.get("text", "")).encode("utf-8"))
+
+    metadata = paper_data.get("metadata", {}) or {}
+    digest.update(str(metadata.get("title", "")).encode("utf-8"))
+
+    for part in (
+        _normalize_provider(preferred_provider),
+        GEMINI_MODEL,
+        VERIFY_MODE,
+        str(paper_data.get("source_type", "")),
+        str(MAX_DIRECT_HTML_CHARS),
+    ):
+        digest.update(b"\x00" + str(part).encode("utf-8"))
+
+    return digest.hexdigest()
+
+
+def _prune_result_cache(now):
+    for key in [
+        key for key, (stored, _) in _RESULT_CACHE.items()
+        if now - stored > RESULT_CACHE_TTL_SECONDS
+    ]:
+        _RESULT_CACHE.pop(key, None)
+
+    while len(_RESULT_CACHE) > RESULT_CACHE_MAX_ITEMS:
+        oldest = min(_RESULT_CACHE, key=lambda k: _RESULT_CACHE[k][0])
+        _RESULT_CACHE.pop(oldest, None)
+
+
+def _run_single_flight(key, work, progress_callback=None):
+    """Run work(progress_fn) once per key; concurrent callers share it."""
+
+    with _FLIGHT_LOCK:
+        _prune_result_cache(time.time())
+
+        cached = _RESULT_CACHE.get(key)
+        if cached is not None:
+            print("ResearchMind: Reusing completed summary for identical document.")
+            if progress_callback:
+                progress_callback(1.0)
+            return dict(cached[1])
+
+        flight = _INFLIGHT.get(key)
+        owner = flight is None
+
+        if owner:
+            flight = _Flight()
+            _INFLIGHT[key] = flight
+
+    if owner:
+
+        def _worker():
+            try:
+                def _record_progress(value):
+                    flight.progress = value
+
+                flight.result = work(_record_progress)
+
+            except BaseException as error:
+                flight.error = error
+
+            finally:
+                with _FLIGHT_LOCK:
+                    _INFLIGHT.pop(key, None)
+
+                    result = flight.result
+                    if (
+                        flight.error is None
+                        and isinstance(result, dict)
+                        and not result.get("fallback_used")
+                    ):
+                        _RESULT_CACHE[key] = (time.time(), dict(result))
+
+                flight.done.set()
+
+        threading.Thread(
+            target=_worker,
+            name="researchmind-summary",
+            daemon=True
+        ).start()
+
+    else:
+        print("ResearchMind: Joining summary already in progress.")
+
+    last_reported = None
+
+    # progress_callback runs on the CALLER's thread only (Streamlit calls
+    # must stay on the script thread). If the script is interrupted by a
+    # rerun, the exception propagates here and the background run survives.
+    while not flight.done.wait(_FLIGHT_POLL_SECONDS):
+        if progress_callback and flight.progress != last_reported:
+            last_reported = flight.progress
+            progress_callback(last_reported)
+
+    if flight.error is not None:
+        raise flight.error
+
+    if progress_callback and last_reported != flight.progress:
+        progress_callback(flight.progress)
+
+    return flight.result
+
+
+def summarize_with_fallback(
+    paper_data,
+    preferred_provider=PROVIDER_GEMINI,
+    progress_callback=None
+):
+
+    if not isinstance(paper_data, dict):
+        raise TypeError(
+            "paper_data must be a dictionary."
+        )
+
+    if not paper_data.get("pages"):
+        raise ValueError(
+            "Paper data does not contain readable pages."
+        )
+
+    key = _summary_cache_key(paper_data, preferred_provider)
+
+    return _run_single_flight(
+        key,
+        lambda report_progress: _summarize_with_fallback_uncached(
+            paper_data,
+            preferred_provider=preferred_provider,
+            progress_callback=report_progress
+        ),
+        progress_callback=progress_callback
+    )
 
 
 def generate_answer_with_fallback(
