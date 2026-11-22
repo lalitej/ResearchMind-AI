@@ -2,6 +2,7 @@
 import ipaddress
 import socket
 import re
+import time
 from urllib.parse import urljoin, urlparse
 
 import requests
@@ -113,6 +114,7 @@ def validate_url(url):
 
 def download_url(url):
 
+    download_started = time.perf_counter()
     current_url = url
 
     session = requests.Session()
@@ -205,12 +207,20 @@ def download_url(url):
                             "Download exceeded the 20 MB limit."
                         )
 
+                download_time = round(
+                    time.perf_counter() - download_started, 3
+                )
+                print(
+                    f"ResearchMind: URL download completed in "
+                    f"{download_time:.3f}s ({len(content):,} bytes)."
+                )
                 return {
                     "content": bytes(content),
                     "content_type": response.headers.get(
                         "Content-Type", ""
                     ).lower(),
-                    "final_url": response.url
+                    "final_url": response.url,
+                    "download_time": download_time
                 }
 
             finally:
@@ -496,6 +506,8 @@ def extract_html_content(html):
 
 def extract_research_url(url):
 
+    extraction_started = time.perf_counter()
+
     if not isinstance(url, str):
 
         raise ValueError(
@@ -558,9 +570,15 @@ def extract_research_url(url):
             )
 
         paper_data["source_type"] = "URL PDF"
-
         paper_data["source_url"] = final_url
-
+        paper_data["download_time"] = downloaded.get("download_time", 0)
+        paper_data["url_processing_time"] = round(
+            time.perf_counter() - extraction_started, 3
+        )
+        print(
+            "ResearchMind: URL PDF fetch + extraction completed in "
+            f"{paper_data['url_processing_time']:.3f}s."
+        )
         return paper_data
 
     # =====================================
@@ -667,6 +685,12 @@ def extract_research_url(url):
     # FINAL OUTPUT
     # =====================================
 
+    print(
+        "ResearchMind: HTML URL fetch + extraction completed in "
+        f"{time.perf_counter() - extraction_started:.3f}s "
+        f"({total_words:,} words)."
+    )
+
     return {
         "success": bool(full_text.strip()),
         "metadata": metadata,
@@ -677,7 +701,10 @@ def extract_research_url(url):
         "scanned_pages": [],
         "needs_ocr": False,
         "warnings": warnings,
-        "extraction_time": 0,
+        "extraction_time": round(
+            time.perf_counter() - extraction_started, 3
+        ),
+        "download_time": downloaded.get("download_time", 0),
         "source_type": "HTML Article",
         "document_kind": document_kind,
         "source_url": final_url
