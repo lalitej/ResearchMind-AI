@@ -258,14 +258,17 @@ st.markdown(
 # =========================================================
 
 @st.cache_data(show_spinner=False)
-def cached_extract_pdf(pdf_bytes):
+def cached_extract_pdf(
+    pdf_bytes,
+    cache_version="pdf-coordinate-prefilter-v3",
+):
     return extract_pdf(pdf_bytes)
 
 
 @st.cache_data(show_spinner=False)
 def cached_extract_url(
     url,
-    cache_version="wikipedia-cleanup-v2",
+    cache_version="url-extraction-timing-v3",
 ):
     return extract_research_url(url)
 
@@ -766,7 +769,8 @@ with left_panel:
                         ):
 
                             extracted_data = cached_extract_pdf(
-                                pdf_bytes
+                                pdf_bytes,
+                                cache_version="pdf-coordinate-prefilter-v3",
                             )
 
                         if not isinstance(extracted_data, dict):
@@ -866,7 +870,7 @@ with left_panel:
 
                                 extracted_data = cached_extract_url(
                                     research_url,
-                                    cache_version="wikipedia-cleanup-v2",
+                                    cache_version="url-extraction-timing-v3",
                                 )
 
                             if not isinstance(extracted_data, dict):
