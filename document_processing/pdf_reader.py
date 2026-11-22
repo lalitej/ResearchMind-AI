@@ -165,9 +165,18 @@ def extract_page_tables(page):
 # COORDINATE-BASED TABLE EXTRACTION
 # =========================================
 
-def extract_coordinate_tables(page):
+def extract_coordinate_tables(page, page_text=None):
 
     tables = []
+
+    # The coordinate reconstruction below is intended for a narrow family of
+    # benchmark tables. Most article pages cannot contain a matching header.
+    # Pre-filter using already-extracted text to avoid a second PyMuPDF word pass.
+    if page_text is not None:
+        page_tokens = set(re.findall(r"[a-z]+", page_text.lower()))
+        if not (page_tokens.intersection({"system", "systems", "model", "models"})
+                and "dev" in page_tokens and "test" in page_tokens):
+            return tables
 
     try:
 
@@ -650,7 +659,9 @@ def process_page(
         if extract_tables
         else []
     )
-    coordinate_tables = extract_coordinate_tables(page)
+    coordinate_tables = extract_coordinate_tables(
+        page, page_text=cleaned_text
+    )
 
     return {
     "page_number": page_number,
@@ -805,6 +816,10 @@ def extract_pdf(
         extraction_time = round(
             time.perf_counter() - start_time,
             3
+        )
+        print(
+            f"ResearchMind: PDF extraction completed in {extraction_time:.3f}s "
+            f"({len(document)} pages, {total_words:,} words)."
         )
 
         return {
