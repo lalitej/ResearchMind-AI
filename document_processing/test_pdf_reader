@@ -1,0 +1,35 @@
+"""Regression tests for the PDF coordinate-table prefilter."""
+from document_processing.pdf_reader import extract_coordinate_tables
+
+
+class _FakePage:
+    def __init__(self):
+        self.word_calls = 0
+
+    def get_text(self, kind):
+        if kind == "words":
+            self.word_calls += 1
+            return []
+        raise AssertionError(f"Unexpected text mode: {kind}")
+
+
+def test_coordinate_table_prefilter_skips_non_candidate_pages():
+    page = _FakePage()
+    result = extract_coordinate_tables(
+        page,
+        page_text="This is a normal abstract and introduction page."
+    )
+
+    assert result == []
+    assert page.word_calls == 0
+
+
+def test_coordinate_table_prefilter_keeps_candidate_pages_for_analysis():
+    page = _FakePage()
+    result = extract_coordinate_tables(
+        page,
+        page_text="System Model Dev Test results and evaluation."
+    )
+
+    assert result == []
+    assert page.word_calls == 1
